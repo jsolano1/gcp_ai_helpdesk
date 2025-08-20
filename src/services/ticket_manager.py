@@ -3,11 +3,11 @@ from google.cloud import bigquery
 from src.utils.bigquery_client import client, registrar_evento, TICKETS_TABLE_ID, validar_tiquete
 from src.config import DATA_ENGINEERING_LEAD, BI_ANALYST_LEAD
 from src.services.ticket_querier import consultar_estado_tiquete
-#from src.services.notification_service import enviar_notificacion_email, enviar_notificacion_chat
-from src.services.notification_service import enviar_notificacion_chat
+from src.services.notification_service import enviar_notificacion_email, enviar_notificacion_chat
+#from src.services.notification_service import enviar_notificacion_chat
 
 def crear_tiquete(descripcion: str, solicitante: str, equipo_asignado: str, prioridad: str) -> str:
-    """Crea un nuevo tiquete, calcula su SLA y envía notificaciones."""
+    """Crea un nuevo tiquete, calcula su SLA y envía notificaciones por Chat y Email."""
     try:
         sla_map = {"alta": 8, "media": 24, "baja": 72}
         prioridad_limpia = prioridad.lower()
@@ -38,23 +38,45 @@ def crear_tiquete(descripcion: str, solicitante: str, equipo_asignado: str, prio
         client.query(insert_ticket_query, job_config=job_config_ticket).result()
         
         detalles_creacion = {"descripcion": descripcion, "equipo_asignado": equipo_asignado, "responsable_inicial": responsable, "prioridad_asignada": prioridad, "sla_calculado_horas": sla_horas}
-        registrar_evento(ticket_id, "CREADO", solicitante, detalles_creacion)
+        registrar_evento(ticket_id, "CREADO", solicitante, detalles_creacion)        
         
-        asunto_solicitante = f"Confirmación de Tiquete Creado: {ticket_id}"
-        cuerpo_solicitante = f"..."
-        #enviar_notificacion_email(solicitante, asunto_solicitante, cuerpo_solicitante)
+        asunto_solicitante = f"✅ Tiquete Creado Exitosamente: {ticket_id}"
+        cuerpo_solicitante = f"""
+        <html>
+        <body>
+            <h2>Hola,</h2>
+            <p>Hemos recibido tu solicitud y hemos creado el tiquete <b>{ticket_id}</b>.</p>
+            <p><b>Descripción:</b> {descripcion}</p>
+            <p>Ha sido asignado a: <b>{responsable}</b>.</p>
+            <p>Recibirás más notificaciones sobre su progreso.</p>
+            <p>Gracias,<br>Dex Helpdesk AI</p>
+        </body>
+        </html>
+        """
+        enviar_notificacion_email(solicitante, asunto_solicitante, cuerpo_solicitante)
 
-        asunto_responsable = f"Nuevo Tiquete Asignado: {ticket_id}"
-        cuerpo_responsable = f"..."
-        #enviar_notificacion_email(responsable, asunto_responsable, cuerpo_responsable)
+        asunto_responsable = f"⚠️ Nuevo Tiquete Asignado: {ticket_id}"
+        cuerpo_responsable = f"""
+        <html>
+        <body>
+            <h2>Hola,</h2>
+            <p>Se te ha asignado un nuevo tiquete de soporte: <b>{ticket_id}</b>.</p>
+            <p><b>Solicitante:</b> {solicitante}</p>
+            <p><b>Descripción:</b> {descripcion}</p>
+            <p><b>Prioridad:</b> {prioridad}</p>
+        </body>
+        </html>
+        """
+        enviar_notificacion_email(responsable, asunto_responsable, cuerpo_responsable)
         
         mensaje_chat_creacion = f"✅ Nuevo Tiquete Creado: *{ticket_id}*\n*Solicitante:* {solicitante}\n*Asignado a:* {responsable}\n*Descripción:* {descripcion}"
         enviar_notificacion_chat(mensaje_chat_creacion)
 
-        return f"Tiquete {ticket_id} creado con prioridad '{prioridad}' y un SLA de {sla_horas} horas. Asignado a {responsable}. Se han enviado las notificaciones por correo."
+        return f"Tiquete {ticket_id} creado con prioridad '{prioridad}' y un SLA de {sla_horas} horas. Asignado a {responsable}. Se han enviado las notificaciones."
     except Exception as e:
         print(f"🔴 Error al crear tiquete: {e}")
         return f"Ocurrió un error al crear el tiquete: {e}"
+
 
 def cerrar_tiquete(ticket_id: str, resolucion: str) -> str:
     """Cierra un tiquete registrando un evento de cierre."""
