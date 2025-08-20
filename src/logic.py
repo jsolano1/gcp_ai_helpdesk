@@ -1,4 +1,6 @@
 import os
+import json
+import traceback
 from dotenv import load_dotenv
 import vertexai
 from vertexai.generative_models import GenerativeModel, Part
@@ -10,7 +12,6 @@ from src.config import GCP_PROJECT_ID, LOCATION
 from src.services import ticket_manager, ticket_querier, ticket_visualizer
 from src.tools.tool_definitions import all_tools_config
 
-# --- INICIO: Esta parte se ejecuta solo una vez al arrancar ---
 vertexai.init(project=GCP_PROJECT_ID, location=LOCATION)
 
 system_prompt = """
@@ -38,7 +39,6 @@ Eres 'Dex', un asistente de Helpdesk virtual de Nivel 1. Tu motor es Gemini. Tu 
 - **Cerrar:** Para cerrar un tiquete, pide una nota de resolución y usa `cerrar_tiquete`.
 """
 
-# Se define el modelo una vez
 model = GenerativeModel(GEMINI_CHAT_MODEL, system_instruction=system_prompt, tools=[all_tools_config])
 
 available_tools = {
@@ -50,26 +50,25 @@ available_tools = {
     "visualizar_flujo_tiquete": ticket_visualizer.visualizar_flujo_tiquete,
     "consultar_metricas": ticket_querier.consultar_metricas
 }
-# --- FIN: Código de inicialización ---
 
 
 def handle_dex_logic(event_data: dict) -> dict:
-    """Toma un payload de mensaje de Chat, lo procesa con la lógica de Dex y devuelve una respuesta."""
+    """Toma un payload de mensaje, lo procesa y devuelve una respuesta, con logging detallado."""
+    print(json.dumps({"mensaje": "Iniciando handle_dex_logic", "payload_recibido": event_data}))
+
     try:
-        # Extraemos el texto del mensaje desde la ruta correcta
         user_message = event_data.get('message', {}).get('text', '').strip()
         
         if not user_message:
-            print("Payload de mensaje recibido pero sin texto. Ignorando.")
-            # --- ✅ ESTE ES EL CAMBIO CLAVE ---
-            # Devolvemos un diccionario vacío para no enviar ninguna respuesta al chat.
+            print(json.dumps({"mensaje": "Payload sin texto, ignorando."}))
             return {}
 
-        # Inicia una sesión de chat nueva con cada mensaje.
         chat = model.start_chat()
         
-        # Envía el mensaje del usuario a la sesión de chat
+        print(json.dumps({"mensaje": "Enviando mensaje a Gemini", "contenido": user_message}))
         response = chat.send_message(user_message)
+        
+        print(json.dumps({"mensaje": "Respuesta recibida de Gemini", "respuesta_api": str(response)}))
         
         function_call = None
         for part in response.candidates[0].content.parts:
@@ -82,9 +81,9 @@ def handle_dex_logic(event_data: dict) -> dict:
             tool_to_call = available_tools[tool_name]
             tool_args = {key: value for key, value in function_call.args.items()}
             
-            print(f"▶️  IA solicita llamar a la función: {tool_name} con argumentos: {tool_args}")
+            print(json.dumps({"mensaje": "IA solicita llamar a función", "funcion": tool_name, "argumentos": tool_args}))
             tool_response_text = tool_to_call(**tool_args)
-            print(f"◀️  Respuesta de la función: {tool_response_text}")
+            print(json.dumps({"mensaje": "Respuesta de la función ejecutada", "resultado": tool_response_text}))
 
             final_response = chat.send_message(
                 Part.from_function_response(name=tool_name, response={"content": tool_response_text})
@@ -94,7 +93,12 @@ def handle_dex_logic(event_data: dict) -> dict:
             return {"text": response.text}
 
     except Exception as e:
-        print(f"🔴 Error CRÍTICO en la lógica de Dex: {e}")
-        # Devolvemos una respuesta de texto simple en caso de error para asegurar
-        # que Google Chat siempre reciba un formato válido.
+        error_details = {
+            "mensaje": "Error CRÍTICO en la lógica de Dex",
+            "tipo_error": type(e).__name__,
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+        print(json.dumps(error_details))
+        
         return {"text": f"Lo siento, ocurrió un error interno al procesar tu solicitud."}
