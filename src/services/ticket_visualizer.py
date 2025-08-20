@@ -7,10 +7,8 @@ from google.cloud import storage
 from vertexai.preview.vision_models import ImageGenerationModel
 from src.utils.bigquery_client import client, EVENTOS_TABLE_ID, validar_tiquete
 
-# Carga las variables de entorno desde el archivo .env (para pruebas locales)
 load_dotenv()
 
-# Lee las variables de configuración del entorno. En Cloud Run, estas se configuran en la UI.
 IMAGEN_MODEL = os.getenv("IMAGEN_MODEL")
 GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")
 

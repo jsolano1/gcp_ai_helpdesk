@@ -1,32 +1,48 @@
-# /main.py (en la raíz)
-
 import os
 import json
-from flask import Flask, request
-# Importamos nuestra función "cerebro" desde src/logic.py
+from flask import Flask, request, jsonify  # <-- Importa jsonify
 from src.logic import handle_dex_logic
 
-# Inicializamos el servidor web
 app = Flask(__name__)
 
 @app.route("/", methods=["POST"])
 def handle_chat_event():
     """
-    Este es el único punto de entrada. Recibe el evento de Google Chat
-    y se lo pasa a la lógica de Dex para que lo procese.
+    Punto de entrada que recibe eventos de Google Chat, los registra
+    y los pasa a la lógica principal para ser procesados.
     """
     event_data = request.get_json(silent=True)
     
-    # Imprimimos el evento para tener un registro (¡muy útil para depurar!)
-    print(f"Evento recibido de Google Chat: {json.dumps(event_data, indent=2)}")
+    # --- LOGGING PARA DEPURACIÓN ---
+    # Imprimimos el evento COMPLETO que nos llega de Google Chat. ¡Esto es clave!
+    print("================ RECIBIENDO EVENTO DE GOOGLE CHAT ================")
+    print(json.dumps(event_data, indent=2))
+    print("==================================================================")
 
-    # Le pasamos el trabajo completo a nuestra función lógica
-    response_payload = handle_dex_logic(event_data)
+    # Verificamos si el evento es de un tipo que podemos manejar (un mensaje de un humano)
+    event_type = event_data.get('type')
     
-    # Devolvemos la respuesta que el cerebro nos dio, sea texto o una tarjeta
-    return response_payload
+    if event_type == 'MESSAGE':
+        # Si es un mensaje, se lo pasamos a nuestra lógica de IA
+        response_payload = handle_dex_logic(event_data)
+    elif event_type == 'ADDED_TO_SPACE':
+        # Si el bot es añadido a un espacio, enviamos un saludo
+        response_payload = {"text": "¡Gracias por añadirme! Soy Dex, tu asistente de Helpdesk. ¿En qué puedo ayudarte?"}
+    else:
+        # Para cualquier otro tipo de evento que no manejamos, no hacemos nada.
+        # Devolver un cuerpo vacío con 200 OK es la forma correcta de ignorar eventos.
+        print(f"Ignorando evento de tipo no manejado: {event_type}")
+        return jsonify({})
+
+    # --- LOGGING PARA DEPURACIÓN ---
+    # Imprimimos la respuesta EXACTA que le vamos a enviar a Google Chat.
+    print("================ ENVIANDO RESPUESTA A GOOGLE CHAT ================")
+    print(json.dumps(response_payload, indent=2))
+    print("==================================================================")
+    
+    # Usamos jsonify para asegurarnos que la respuesta sea un JSON válido
+    return jsonify(response_payload)
 
 if __name__ == "__main__":
-    # Esta parte es la que Gunicorn usará para iniciar el servidor en Cloud Run
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
