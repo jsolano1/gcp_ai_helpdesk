@@ -1,6 +1,8 @@
+# /main.py (en la raíz)
+
 import os
 import json
-from flask import Flask, request, jsonify  # <-- Importa jsonify
+from flask import Flask, request, jsonify
 from src.logic import handle_dex_logic
 
 app = Flask(__name__)
@@ -13,34 +15,30 @@ def handle_chat_event():
     """
     event_data = request.get_json(silent=True)
     
-    # --- LOGGING PARA DEPURACIÓN ---
-    # Imprimimos el evento COMPLETO que nos llega de Google Chat. ¡Esto es clave!
+    # Log para depuración
     print("================ RECIBIENDO EVENTO DE GOOGLE CHAT ================")
     print(json.dumps(event_data, indent=2))
     print("==================================================================")
 
-    # Verificamos si el evento es de un tipo que podemos manejar (un mensaje de un humano)
-    event_type = event_data.get('type')
-    
-    if event_type == 'MESSAGE':
-        # Si es un mensaje, se lo pasamos a nuestra lógica de IA
-        response_payload = handle_dex_logic(event_data)
-    elif event_type == 'ADDED_TO_SPACE':
-        # Si el bot es añadido a un espacio, enviamos un saludo
-        response_payload = {"text": "¡Gracias por añadirme! Soy Dex, tu asistente de Helpdesk. ¿En qué puedo ayudarte?"}
+    response_payload = None
+
+    # --- CAMBIO CLAVE ---
+    # Buscamos directamente si el evento contiene un mensaje de usuario.
+    # Esta es la forma más robusta de identificar un mensaje para responder.
+    if 'chat' in event_data and 'messagePayload' in event_data['chat']:
+        # Pasamos el contenido de 'messagePayload' a la lógica,
+        # que es lo que realmente contiene la información del mensaje.
+        response_payload = handle_dex_logic(event_data['chat']['messagePayload'])
     else:
-        # Para cualquier otro tipo de evento que no manejamos, no hacemos nada.
-        # Devolver un cuerpo vacío con 200 OK es la forma correcta de ignorar eventos.
-        print(f"Ignorando evento de tipo no manejado: {event_type}")
+        # Si no es un mensaje (puede ser un evento de autorización, etc.), lo ignoramos.
+        print("Ignorando evento que no es un mensaje de usuario.")
         return jsonify({})
 
-    # --- LOGGING PARA DEPURACIÓN ---
-    # Imprimimos la respuesta EXACTA que le vamos a enviar a Google Chat.
+    # Log para depuración
     print("================ ENVIANDO RESPUESTA A GOOGLE CHAT ================")
     print(json.dumps(response_payload, indent=2))
     print("==================================================================")
     
-    # Usamos jsonify para asegurarnos que la respuesta sea un JSON válido
     return jsonify(response_payload)
 
 if __name__ == "__main__":

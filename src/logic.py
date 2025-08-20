@@ -1,5 +1,3 @@
-# src/logic.py
-
 import os
 from dotenv import load_dotenv
 import vertexai
@@ -40,7 +38,7 @@ Eres 'Dex', un asistente de Helpdesk virtual de Nivel 1. Tu motor es Gemini. Tu 
 - **Cerrar:** Para cerrar un tiquete, pide una nota de resolución y usa `cerrar_tiquete`.
 """
 
-# Se define el modelo una vez, pero no se inicia el chat todavía.
+# Se define el modelo una vez
 model = GenerativeModel(GEMINI_CHAT_MODEL, system_instruction=system_prompt, tools=[all_tools_config])
 
 available_tools = {
@@ -56,20 +54,23 @@ available_tools = {
 
 
 def handle_dex_logic(event_data: dict) -> dict:
-    """Toma un evento de Chat, lo procesa con la lógica de Dex y devuelve una respuesta."""
+    """Toma un payload de mensaje de Chat, lo procesa con la lógica de Dex y devuelve una respuesta."""
     try:
+        # Extraemos el texto del mensaje desde la ruta correcta
         user_message = event_data.get('message', {}).get('text', '').strip()
+        
         if not user_message:
-            return {"text": "No pude entender tu mensaje. Por favor, intenta de nuevo."}
+            print("Payload de mensaje recibido pero sin texto. Ignorando.")
+            # --- ✅ ESTE ES EL CAMBIO CLAVE ---
+            # Devolvemos un diccionario vacío para no enviar ninguna respuesta al chat.
+            return {}
 
-        # --- CAMBIO IMPORTANTE ---
-        # Inicia una sesión de chat nueva con cada mensaje. Esto es más seguro en Cloud Run.
+        # Inicia una sesión de chat nueva con cada mensaje.
         chat = model.start_chat()
         
-        # Envía el mensaje del usuario a esta nueva sesión de chat
+        # Envía el mensaje del usuario a la sesión de chat
         response = chat.send_message(user_message)
         
-        # El resto de la lógica para manejar la respuesta de la IA sigue igual
         function_call = None
         for part in response.candidates[0].content.parts:
             if hasattr(part, 'function_call') and part.function_call and part.function_call.name:
@@ -96,4 +97,4 @@ def handle_dex_logic(event_data: dict) -> dict:
         print(f"🔴 Error CRÍTICO en la lógica de Dex: {e}")
         # Devolvemos una respuesta de texto simple en caso de error para asegurar
         # que Google Chat siempre reciba un formato válido.
-        return {"text": f"Lo siento, ocurrió un error interno al procesar tu solicitud: {e}"}
+        return {"text": f"Lo siento, ocurrió un error interno al procesar tu solicitud."}
