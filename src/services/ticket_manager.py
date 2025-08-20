@@ -3,7 +3,8 @@ from google.cloud import bigquery
 from src.utils.bigquery_client import client, registrar_evento, TICKETS_TABLE_ID, validar_tiquete
 from src.config import DATA_ENGINEERING_LEAD, BI_ANALYST_LEAD
 from src.services.ticket_querier import consultar_estado_tiquete
-from src.services.notification_service import enviar_notificacion_email, enviar_notificacion_chat
+#from src.services.notification_service import enviar_notificacion_email, enviar_notificacion_chat
+from src.services.notification_service import enviar_notificacion_chat
 
 def crear_tiquete(descripcion: str, solicitante: str, equipo_asignado: str, prioridad: str) -> str:
     """Crea un nuevo tiquete, calcula su SLA y envía notificaciones."""
@@ -41,11 +42,11 @@ def crear_tiquete(descripcion: str, solicitante: str, equipo_asignado: str, prio
         
         asunto_solicitante = f"Confirmación de Tiquete Creado: {ticket_id}"
         cuerpo_solicitante = f"..."
-        enviar_notificacion_email(solicitante, asunto_solicitante, cuerpo_solicitante)
+        #enviar_notificacion_email(solicitante, asunto_solicitante, cuerpo_solicitante)
 
         asunto_responsable = f"Nuevo Tiquete Asignado: {ticket_id}"
         cuerpo_responsable = f"..."
-        enviar_notificacion_email(responsable, asunto_responsable, cuerpo_responsable)
+        #enviar_notificacion_email(responsable, asunto_responsable, cuerpo_responsable)
         
         mensaje_chat_creacion = f"✅ Nuevo Tiquete Creado: *{ticket_id}*\n*Solicitante:* {solicitante}\n*Asignado a:* {responsable}\n*Descripción:* {descripcion}"
         enviar_notificacion_chat(mensaje_chat_creacion)
