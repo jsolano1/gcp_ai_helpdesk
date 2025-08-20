@@ -26,13 +26,10 @@ def get_authenticated_service():
         creds = Credentials.from_authorized_user_file("token.json", SCOPES)
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            # Si el token ha expirado, lo refrescamos
             creds.refresh(Request())
         else:
-            # Si no hay token, iniciamos el flujo de autenticación
             flow = InstalledAppFlow.from_client_secrets_file("credentials.json", SCOPES)
             creds = flow.run_local_server(port=0)
-        # Guardamos las credenciales para la próxima vez
         with open("token.json", "w") as token:
             token.write(creds.to_json())
     
@@ -54,7 +51,6 @@ def enviar_notificacion_email(destinatario: str, asunto: str, cuerpo_html: str):
         message["From"] = "me" 
         message["Subject"] = asunto
 
-        # Codificamos el mensaje en base64 para la API
         encoded_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
         create_message = {"raw": encoded_message}
 

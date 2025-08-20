@@ -43,7 +43,6 @@ consultar_metricas_declaration = FunctionDeclaration(
     parameters={"type": "object", "properties": {"pregunta_del_usuario": {"type": "string"}}, "required": ["pregunta_del_usuario"]}
 )
 
-# Agrupamos todas las declaraciones en una sola configuración de herramientas
 all_tools_config = Tool(function_declarations=[
     crear_tiquete_declaration,
     consultar_estado_declaration,
