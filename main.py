@@ -1,57 +1,32 @@
-# En cloud_run_handler/main.py
+# /main.py (en la raíz)
+
 import os
 import json
 from flask import Flask, request
+# Importamos nuestra función "cerebro" desde src/logic.py
+from src.logic import handle_dex_logic
 
+# Inicializamos el servidor web
 app = Flask(__name__)
 
 @app.route("/", methods=["POST"])
 def handle_chat_event():
     """
-    Función que se activa cuando Google Chat envía un evento.
+    Este es el único punto de entrada. Recibe el evento de Google Chat
+    y se lo pasa a la lógica de Dex para que lo procese.
     """
     event_data = request.get_json(silent=True)
     
-    print("Evento recibido de Google Chat:")
-    print(json.dumps(event_data, indent=4))
-    
-    # ====== LÓGICA DE RESPUESTA MODIFICADA ======
-    
-    # Obtenemos el tipo de evento. Para un mensaje, será 'MESSAGE'.
-    event_type = event_data.get("type", "")
-    
-    response_text = "He recibido tu mensaje. ¡La conexión funciona!"
+    # Imprimimos el evento para tener un registro (¡muy útil para depurar!)
+    print(f"Evento recibido de Google Chat: {json.dumps(event_data, indent=2)}")
 
-    # Si el evento es un mensaje, construimos una respuesta de tarjeta simple.
-    if event_type == "MESSAGE":
-        return {
-            "cardsV2": [
-                {
-                    "cardId": "welcome_card",
-                    "card": {
-                        "header": {
-                            "title": "Dex Helpdesk",
-                            "subtitle": "Conexión Exitosa"
-                        },
-                        "sections": [
-                            {
-                                "widgets": [
-                                    {
-                                        "textParagraph": {
-                                            "text": response_text
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
-                    }
-                }
-            ]
-        }
+    # Le pasamos el trabajo completo a nuestra función lógica
+    response_payload = handle_dex_logic(event_data)
     
-    # Para otros tipos de eventos (como ser añadido a un espacio), no hacemos nada.
-    return {}
+    # Devolvemos la respuesta que el cerebro nos dio, sea texto o una tarjeta
+    return response_payload
 
 if __name__ == "__main__":
+    # Esta parte es la que Gunicorn usará para iniciar el servidor en Cloud Run
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
