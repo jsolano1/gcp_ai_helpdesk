@@ -1,3 +1,5 @@
+# src/logic.py
+
 import os
 from dotenv import load_dotenv
 import vertexai
@@ -10,6 +12,7 @@ from src.config import GCP_PROJECT_ID, LOCATION
 from src.services import ticket_manager, ticket_querier, ticket_visualizer
 from src.tools.tool_definitions import all_tools_config
 
+# --- INICIO: Esta parte se ejecuta solo una vez al arrancar ---
 vertexai.init(project=GCP_PROJECT_ID, location=LOCATION)
 
 system_prompt = """
@@ -36,8 +39,9 @@ Eres 'Dex', un asistente de Helpdesk virtual de Nivel 1. Tu motor es Gemini. Tu 
 - **Modificar SLA:** Para cambiar el SLA, usa `modificar_sla_manual`.
 - **Cerrar:** Para cerrar un tiquete, pide una nota de resolución y usa `cerrar_tiquete`.
 """
+
+# Se define el modelo una vez, pero no se inicia el chat todavía.
 model = GenerativeModel(GEMINI_CHAT_MODEL, system_instruction=system_prompt, tools=[all_tools_config])
-chat = model.start_chat()
 
 available_tools = {
     "crear_tiquete_helpdesk": ticket_manager.crear_tiquete,
@@ -48,6 +52,8 @@ available_tools = {
     "visualizar_flujo_tiquete": ticket_visualizer.visualizar_flujo_tiquete,
     "consultar_metricas": ticket_querier.consultar_metricas
 }
+# --- FIN: Código de inicialización ---
+
 
 def handle_dex_logic(event_data: dict) -> dict:
     """Toma un evento de Chat, lo procesa con la lógica de Dex y devuelve una respuesta."""
@@ -56,8 +62,14 @@ def handle_dex_logic(event_data: dict) -> dict:
         if not user_message:
             return {"text": "No pude entender tu mensaje. Por favor, intenta de nuevo."}
 
+        # --- CAMBIO IMPORTANTE ---
+        # Inicia una sesión de chat nueva con cada mensaje. Esto es más seguro en Cloud Run.
+        chat = model.start_chat()
+        
+        # Envía el mensaje del usuario a esta nueva sesión de chat
         response = chat.send_message(user_message)
         
+        # El resto de la lógica para manejar la respuesta de la IA sigue igual
         function_call = None
         for part in response.candidates[0].content.parts:
             if hasattr(part, 'function_call') and part.function_call and part.function_call.name:
@@ -68,27 +80,20 @@ def handle_dex_logic(event_data: dict) -> dict:
             tool_name = function_call.name
             tool_to_call = available_tools[tool_name]
             tool_args = {key: value for key, value in function_call.args.items()}
+            
+            print(f"▶️  IA solicita llamar a la función: {tool_name} con argumentos: {tool_args}")
             tool_response_text = tool_to_call(**tool_args)
+            print(f"◀️  Respuesta de la función: {tool_response_text}")
 
-            if tool_name == "visualizar_flujo_tiquete":
-                return {"text": tool_response_text}
-            else:
-                final_response = chat.send_message(
-                    Part.from_function_response(name=tool_name, response={"content": tool_response_text})
-                )
-                return {"text": final_response.text}
+            final_response = chat.send_message(
+                Part.from_function_response(name=tool_name, response={"content": tool_response_text})
+            )
+            return {"text": final_response.text}
         else:
             return {"text": response.text}
 
     except Exception as e:
-        print(f"🔴 Error en la lógica de Dex: {e}")
-        # Para Google Chat, es mejor devolver una tarjeta en caso de error
-        return {
-            "cardsV2": [{
-                "cardId": "error_card",
-                "card": {
-                    "header": {"title": "Ocurrió un Error"},
-                    "sections": [{"widgets": [{"textParagraph": {"text": f"Lo siento, ocurrió un error interno al procesar tu solicitud. Por favor, intenta de nuevo o contacta a soporte.<br><br><i>Detalle: {e}</i>"}}]}]
-                }
-            }]
-        }
+        print(f"🔴 Error CRÍTICO en la lógica de Dex: {e}")
+        # Devolvemos una respuesta de texto simple en caso de error para asegurar
+        # que Google Chat siempre reciba un formato válido.
+        return {"text": f"Lo siento, ocurrió un error interno al procesar tu solicitud: {e}"}
