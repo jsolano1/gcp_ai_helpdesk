@@ -1,4 +1,5 @@
-# main.py (CORREGIDO)
+# main.py
+
 import os
 import json
 import time
@@ -7,65 +8,88 @@ from src.logic import handle_dex_logic
 
 app = Flask(__name__)
 
+def format_chat_response(text_message: str) -> dict:
+    """
+    Toma un mensaje de texto simple y lo envuelve en el formato de tarjeta
+    JSON que la API de Google Chat requiere.
+    """
+    return {
+        "cardsV2": [
+            {
+                "cardId": "responseCard",
+                "card": {
+                    "sections": [
+                        {
+                            "widgets": [
+                                {
+                                    "textParagraph": {
+                                        "text": text_message
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+
 @app.route("/", methods=["POST"])
 def handle_chat_event():
     """
-    Punto de entrada que recibe eventos de Google Chat, los valida y los
-    pasa a la lógica principal para ser procesados.
+    Punto de entrada que recibe eventos de Google Chat, los valida,
+    pasa la lógica a un manejador separado y formatea la respuesta final.
     """
     start_time = time.time()
-    event_data = request.get_json(silent=True)
+    event_data = request.get_json(silent=True) or {}
     
-    log_entry = {
-        "mensaje": "Procesando evento de Google Chat",
-        "tipo_evento": event_data.get("type", "DESCONOCIDO"),
-        "respuesta_enviada": None,
-        "error": None,
-        "duracion_ms": None
-    }
+    print(json.dumps({"log_name": "HandleChatEvent_Entrada", "evento_recibido": event_data}))
 
-    response_payload = {} # Por defecto, una respuesta vacía válida
+    response_payload = {}  # Respuesta vacía por defecto para eventos ignorados
 
     try:
-        # 1. VERIFICAR SI ES UN EVENTO DE MENSAJE
-        # Solo reaccionamos a mensajes directos o menciones.
-        if event_data and event_data.get('type') == 'MESSAGE':
-            
-            # 2. EXTRAER LA INFORMACIÓN DE FORMA SEGURA
+        event_type = event_data.get('type')
+
+        if event_type == 'MESSAGE':
             user_message_text = event_data.get("message", {}).get("text", "").strip()
             user_info = event_data.get("user", {})
             user_email = user_info.get("email")
             user_display_name = user_info.get("displayName", "Usuario")
 
-            # Validar que tenemos la información mínima necesaria
             if user_message_text and user_email:
-                # 3. LLAMAR A LA LÓGICA PRINCIPAL
-                response_payload = handle_dex_logic(
-                    user_message=user_message_text, 
-                    user_email=user_email, 
+                # 1. Llama a la lógica para obtener una respuesta de texto simple
+                logic_response_text = handle_dex_logic(
+                    user_message=user_message_text,
+                    user_email=user_email,
                     user_display_name=user_display_name
                 )
-                log_entry["respuesta_enviada"] = response_payload
+                
+                # 2. Formatea esa respuesta para Google Chat
+                response_payload = format_chat_response(logic_response_text)
             else:
-                log_entry["mensaje"] = "Evento de mensaje recibido pero sin texto o email de usuario."
-
-        # Si es otro tipo de evento (ADDED_TO_SPACE, etc.), simplemente lo ignoramos
-        # y devolvemos el 'response_payload' vacío, lo cual es una acción válida.
+                print(json.dumps({"log_name": "HandleChatEvent_Alerta", "mensaje": "Evento de mensaje ignorado (sin texto o email)."}))
+        
         else:
-            log_entry["mensaje"] = f"Ignorando evento de tipo '{log_entry['tipo_evento']}'."
+            print(json.dumps({"log_name": "HandleChatEvent_Info", "mensaje": f"Ignorando evento de tipo '{event_type}'."}))
 
     except Exception as e:
-        log_entry["error"] = str(e)
-        # Devolver una tarjeta de error genérica al usuario
-        response_payload = {
-            "text": "Lo siento, ocurrió un error inesperado al procesar tu solicitud."
-        }
-        log_entry["respuesta_enviada"] = response_payload
+        print(json.dumps({
+            "log_name": "HandleChatEvent_Error",
+            "nivel": "CRITICO",
+            "mensaje": "Error no manejado en el nivel superior del endpoint.",
+            "error": str(e)
+        }))
+        # Crear una respuesta de error para el usuario
+        error_text = "Ocurrió un error inesperado. Por favor, intenta de nuevo."
+        response_payload = format_chat_response(error_text)
     
     finally:
         end_time = time.time()
-        log_entry["duracion_ms"] = int((end_time - start_time) * 1000)
-        print(json.dumps(log_entry))
+        print(json.dumps({
+            "log_name": "HandleChatEvent_Salida",
+            "duracion_ms": int((end_time - start_time) * 1000),
+            "respuesta_enviada": response_payload
+        }))
 
     return jsonify(response_payload)
 
