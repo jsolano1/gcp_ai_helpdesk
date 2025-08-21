@@ -5,21 +5,21 @@ from dotenv import load_dotenv
 import vertexai
 from vertexai.generative_models import GenerativeModel, Part
 
-# Carga las variables de entorno
 load_dotenv()
-GEMINI_CHAT_MODEL = os.getenv("GEMINI_CHAT_MODEL")
 
-# Importaciones de módulos locales
+# --- CONFIGURACIÓN Y CLIENTES ---
+GEMINI_CHAT_MODEL = os.getenv("GEMINI_CHAT_MODEL")
 from src.config import GCP_PROJECT_ID, LOCATION
 from src.services import ticket_manager, ticket_querier, ticket_visualizer
 from src.tools.tool_definitions import all_tools_config
 
-# --- Variables Globales para Inicialización Diferida ---
-# Esto asegura que el modelo pesado solo se cargue una vez por instancia.
+# --- INICIALIZACIÓN DIFERIDA (LAZY INITIALIZATION) ---
+# Esto es crucial para un arranque rápido y estable en Cloud Run.
 model = None
 initialized = False
 
-# El prompt y las herramientas se pueden definir globalmente
+# --- PROMPT Y HERRAMIENTAS ---
+# El prompt del sistema define la personalidad y reglas del bot.
 system_prompt = """
 Eres 'Dex', un asistente de Helpdesk virtual de Nivel 1. Tu motor es Gemini. Tu misión es entender la solicitud del usuario, determinar su prioridad, y ayudarlo a gestionar tiquetes de soporte de manera eficiente y amigable.
 **## Reglas Clave ##**
@@ -39,6 +39,7 @@ Eres 'Dex', un asistente de Helpdesk virtual de Nivel 1. Tu motor es Gemini. Tu 
 - **Y el resto de tus habilidades...**
 """
 
+# Mapea los nombres de las herramientas a las funciones reales.
 available_tools = {
     "crear_tiquete_helpdesk": ticket_manager.crear_tiquete,
     "consultar_estado_tiquete": ticket_querier.consultar_estado_tiquete,
@@ -51,38 +52,34 @@ available_tools = {
 
 def initialize_ai():
     """
-    Inicializa Vertex AI y el modelo de forma diferida, asegurando que solo se ejecute una vez.
+    Inicializa el cliente de Vertex AI y el modelo generativo.
+    Usa variables globales para asegurar que esta operación pesada solo ocurra una vez.
     """
     global model, initialized
     if not initialized:
-        print(json.dumps({"log_name": "InitializeAI", "mensaje": "Iniciando la carga del modelo de IA por primera vez."}))
+        print(json.dumps({"log_name": "InitializeAI", "mensaje": "Inicializando modelo de IA."}))
         vertexai.init(project=GCP_PROJECT_ID, location=LOCATION)
         model = GenerativeModel(GEMINI_CHAT_MODEL, system_instruction=system_prompt, tools=[all_tools_config])
         initialized = True
-        print(json.dumps({"log_name": "InitializeAI", "mensaje": "✅ Inicialización de IA completada."}))
 
-def execute_task_and_get_reply(user_message: str, user_email: str, user_display_name: str) -> str:
+def handle_dex_logic(user_message: str, user_email: str, user_display_name: str) -> str:
     """
-    Esta función contiene la lógica pesada. Es llamada por el trabajador de Cloud Tasks.
-    Realiza la llamada a Gemini, ejecuta herramientas y devuelve la respuesta final en texto.
+    Maneja la lógica completa de forma síncrona y devuelve el texto de respuesta final.
     """
     try:
-        # Paso 1: Asegurarse de que el modelo de IA esté listo.
+        # Se asegura de que el modelo esté listo para usarse.
         initialize_ai()
-        print(json.dumps({"log_name": "ExecuteTask", "mensaje": "Iniciando ejecución de tarea pesada."}))
-
-        # Paso 2: Interactuar con el modelo de Gemini.
+        
         chat = model.start_chat()
         response = chat.send_message(user_message)
         
         function_call = response.candidates[0].content.parts[0].function_call
         
-        # Paso 3: Manejar la lógica de llamada a herramientas si es necesario.
         if function_call and function_call.name:
             tool_name = function_call.name
             tool_to_call = available_tools.get(tool_name)
             
-            if not tool_to_call:
+            if not tool_to_call: 
                 raise ValueError(f"Herramienta desconocida solicitada por el modelo: {tool_name}")
 
             tool_args = {key: value for key, value in function_call.args.items()}
@@ -91,27 +88,20 @@ def execute_task_and_get_reply(user_message: str, user_email: str, user_display_
                 tool_args["solicitante"] = user_email
                 tool_args["nombre_solicitante"] = user_display_name
 
-            # Ejecutar la herramienta (ej. consulta a BigQuery)
+            # Ejecuta la herramienta (e.g., consulta a BigQuery) y espera el resultado.
             tool_response_text = tool_to_call(**tool_args)
             
-            # Devolver el resultado de la herramienta al modelo para una respuesta final.
+            # Envía el resultado de la herramienta de vuelta a la IA para una respuesta final.
             final_response = chat.send_message(
                 Part.from_function_response(name=tool_name, response={"content": tool_response_text})
             )
             final_text = final_response.text
         else:
-            # Si no hay herramientas, la respuesta es el texto directo del modelo.
+            # Si no se necesita una herramienta, la respuesta es directa.
             final_text = response.text
 
-        print(json.dumps({"log_name": "ExecuteTask_Exito", "respuesta_final": final_text}))
         return final_text
 
     except Exception as e:
-        error_details = {
-            "log_name": "ExecuteTask_Error", "nivel": "CRITICO",
-            "mensaje": "Error CRÍTICO durante la ejecución de la tarea en segundo plano.",
-            "tipo_error": type(e).__name__,
-            "error": str(e), "traceback": traceback.format_exc()
-        }
-        print(json.dumps(error_details))
-        return "Lo siento, ocurrió un error interno al procesar tu solicitud. El equipo técnico ha sido notificado."
+        print(json.dumps({"log_name": "HandleDexLogic_Error", "error": str(e), "traceback": traceback.format_exc()}))
+        return "Lo siento, ocurrió un error interno al procesar tu solicitud."
