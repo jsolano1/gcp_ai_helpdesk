@@ -1,11 +1,8 @@
-
 import os
 import json
-import time
 import traceback
 from flask import Flask, request, jsonify
 
-# No hay inicialización de clientes aquí, todo es diferido
 print(json.dumps({"log_name": "ServerStartup", "mensaje": "main.py cargado."}))
 
 app = Flask(__name__)
@@ -15,50 +12,32 @@ def handle_chat_event():
     event_data = request.get_json(silent=True) or {}
     
     try:
-        chat_event = event_data.get("chat", {})
-        if chat_event.get("messagePayload", {}).get("message"):
-            
-            # Importamos la lógica justo cuando la necesitamos
+        # Para un bot estándar, el 'type' sí debería estar en el nivel superior
+        if event_data.get('type') == 'MESSAGE':
             from src.logic import handle_dex_logic
             
-            user_message = chat_event.get("messagePayload", {}).get("message", {}).get("text", "").strip()
-            user_info = chat_event.get("user", {})
+            user_message = event_data.get('message', {}).get('text', '').strip()
+            user_info = event_data.get('user', {})
             
-            # Llamamos a la lógica y esperamos la respuesta (flujo síncrono)
             final_text_reply = handle_dex_logic(
                 user_message=user_message,
                 user_email=user_info.get("email"),
                 user_display_name=user_info.get("displayName")
             )
             
-            # --- LA RESPUESTA CORRECTA Y DEFINITIVA ---
-            # Devolvemos un objeto CARD puro, como lo exige la API de Add-ons
-            response_payload = {
-                "sections": [{
-                    "widgets": [{
-                        "textParagraph": {
-                            "text": final_text_reply
-                        }
-                    }]
-                }]
-            }
-            return jsonify(response_payload)
-        else:
-            # Si no es un mensaje, no hacemos nada
-            return jsonify({})
+            # --- LA RESPUESTA CORRECTA PARA UN BOT ESTÁNDAR ---
+            # Un objeto 'Message' simple con solo texto.
+            return jsonify({"text": final_text_reply})
+        
+        elif event_data.get('type') == 'ADDED_TO_SPACE':
+            return jsonify({"text": "¡Gracias por añadirme! Soy Dex, tu asistente de Helpdesk."})
+
+        # Ignoramos otros tipos de eventos
+        return jsonify({})
 
     except Exception as e:
         print(json.dumps({"log_name": "HandleChatEvent_Error", "error": str(e), "traceback": traceback.format_exc()}))
-        # Devolvemos una tarjeta de error
-        return jsonify({
-            "sections": [{
-                "widgets": [{
-                    "textParagraph": {
-                        "text": "Ocurrió un error inesperado al procesar tu solicitud."
-                    }
-                }]
-            }]
-        })
+        return jsonify({"text": "Ocurrió un error inesperado."})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
