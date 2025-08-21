@@ -18,7 +18,14 @@ def handle_chat_event():
     try:
         chat_event = event_data.get("chat", {})
         
+        # Primero, verificamos si es un evento de tipo ADDED_TO_SPACE
+        # (Aunque el JSON no tiene 'type', la presencia de 'space' y la ausencia de 'message' puede ser un indicador)
+        # Por ahora, nos enfocamos en el mensaje.
+        
+        # Verificamos si es un evento de MENSAJE buscando la existencia del objeto 'message'
         if chat_event.get("messagePayload", {}).get("message"):
+            print(json.dumps({"log_name": "HandleChatEvent_Info", "mensaje": "Evento de tipo MENSAJE detectado."}))
+            
             from src.logic import handle_dex_logic
             
             user_message_text = chat_event.get("messagePayload", {}).get("message", {}).get("text", "").strip()
@@ -29,15 +36,10 @@ def handle_chat_event():
             if user_message_text and user_email:
                 logic_response_text = handle_dex_logic(user_message=user_message_text, user_email=user_email, user_display_name=user_display_name)
                 
-                # --- CAMBIO FINAL: Construimos el objeto Card directamente ---
+                # --- CAMBIO FINAL Y CLAVE: Devolvemos la respuesta más simple y válida posible ---
+                # Un objeto Message que solo contiene la propiedad 'text'.
                 response_payload = {
-                    "sections": [{
-                        "widgets": [{
-                            "textParagraph": {
-                                "text": logic_response_text
-                            }
-                        }]
-                    }]
+                    "text": logic_response_text
                 }
         else:
             print(json.dumps({"log_name": "HandleChatEvent_Info", "mensaje": "Ignorando evento que no es de tipo MENSAJE."}))
