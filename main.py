@@ -24,20 +24,20 @@ def handle_chat_event():
     }
 
     try:
-        # Extrae el texto del mensaje del usuario
-        user_message_text = event_data.get("message", {}).get("text")
+        # --- ESTA ES LA LÓGICA CORREGIDA ---
+        # La información del mensaje está dentro de event_data['message']
+        message_info = event_data.get("message")
         
-        # Procede solo si es un mensaje de usuario con texto
-        if user_message_text:
-            # Extrae la información del usuario del payload
+        # Procede solo si el objeto 'message' y su 'text' existen
+        if message_info and message_info.get("text"):
+            user_message_text = message_info.get("text")
+
+            # La información del usuario que envía el mensaje está en el objeto 'user'
             user_info = event_data.get("user", {})
             user_email = user_info.get("email")
-            
-            # El nombre a mostrar (displayName) está en el objeto "sender"
-            sender_info = event_data.get("message", {}).get("sender", {})
-            user_display_name = sender_info.get("displayName", "Usuario") # Usamos "Usuario" como fallback
+            user_display_name = user_info.get("displayName", "Usuario") # Usamos "Usuario" como fallback
 
-            # Llama a la lógica principal con los TRES argumentos requeridos
+            # Llama a la lógica principal con los argumentos correctos
             response_payload = handle_dex_logic(
                 user_message=user_message_text, 
                 user_email=user_email, 
@@ -45,13 +45,11 @@ def handle_chat_event():
             )
             log_entry["respuesta_enviada"] = response_payload
         else:
-            log_entry["mensaje"] = "Ignorando evento que no es un mensaje de usuario."
+            log_entry["mensaje"] = "Ignorando evento que no es un mensaje de usuario (sin 'message' o 'text')."
             response_payload = {}
 
     except Exception as e:
         log_entry["error"] = str(e)
-        # Importante: La respuesta de error también debe estar en formato de Tarjeta
-        # para que Chat la pueda mostrar.
         response_payload = {
             "cardsV2": [{
                 "cardId": "errorCard",
