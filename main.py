@@ -18,11 +18,6 @@ def handle_chat_event():
     try:
         chat_event = event_data.get("chat", {})
         
-        # Primero, verificamos si es un evento de tipo ADDED_TO_SPACE
-        # (Aunque el JSON no tiene 'type', la presencia de 'space' y la ausencia de 'message' puede ser un indicador)
-        # Por ahora, nos enfocamos en el mensaje.
-        
-        # Verificamos si es un evento de MENSAJE buscando la existencia del objeto 'message'
         if chat_event.get("messagePayload", {}).get("message"):
             print(json.dumps({"log_name": "HandleChatEvent_Info", "mensaje": "Evento de tipo MENSAJE detectado."}))
             
@@ -36,16 +31,23 @@ def handle_chat_event():
             if user_message_text and user_email:
                 logic_response_text = handle_dex_logic(user_message=user_message_text, user_email=user_email, user_display_name=user_display_name)
                 
-                # --- CAMBIO FINAL Y CLAVE: Devolvemos la respuesta más simple y válida posible ---
-                # Un objeto Message que solo contiene la propiedad 'text'.
+                # --- LA SOLUCIÓN FINAL: Devolvemos el objeto CARD directamente ---
+                # Esto es lo que un Google Workspace Add-on espera como respuesta.
                 response_payload = {
-                    "text": logic_response_text
+                    "sections": [{
+                        "widgets": [{
+                            "textParagraph": {
+                                "text": logic_response_text
+                            }
+                        }]
+                    }]
                 }
         else:
             print(json.dumps({"log_name": "HandleChatEvent_Info", "mensaje": "Ignorando evento que no es de tipo MENSAJE."}))
 
     except Exception as e:
         print(json.dumps({"log_name": "HandleChatEvent_Error", "nivel": "CRITICO", "error": str(e)}))
+        # Para errores, un mensaje de texto simple sí es una respuesta válida.
         response_payload = {"text": "Ocurrió un error inesperado al procesar tu solicitud."}
     
     finally:
