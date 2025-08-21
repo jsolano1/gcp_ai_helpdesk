@@ -1,5 +1,3 @@
-# src/logic.py
-
 import os
 import json
 import traceback
@@ -16,12 +14,12 @@ from src.config import GCP_PROJECT_ID, LOCATION
 from src.services import ticket_manager, ticket_querier, ticket_visualizer
 from src.tools.tool_definitions import all_tools_config
 
-# --- CAMBIO CLAVE: Inicializamos las variables globales como None ---
-# Esto evita que se ejecute código pesado al importar el archivo.
+# --- Variables Globales para Inicialización Diferida ---
+# Esto asegura que el modelo pesado solo se cargue una vez por instancia.
 model = None
 initialized = False
 
-# El prompt y las herramientas se pueden definir globalmente ya que son solo configuración.
+# El prompt y las herramientas se pueden definir globalmente
 system_prompt = """
 Eres 'Dex', un asistente de Helpdesk virtual de Nivel 1. Tu motor es Gemini. Tu misión es entender la solicitud del usuario, determinar su prioridad, y ayudarlo a gestionar tiquetes de soporte de manera eficiente y amigable.
 **## Reglas Clave ##**
@@ -53,46 +51,33 @@ available_tools = {
 
 def initialize_ai():
     """
-    Función para inicializar Vertex AI y el modelo de forma diferida (lazy).
-    Usa variables globales para asegurar que solo se ejecute una vez.
+    Inicializa Vertex AI y el modelo de forma diferida, asegurando que solo se ejecute una vez.
     """
     global model, initialized
     if not initialized:
         print(json.dumps({"log_name": "InitializeAI", "mensaje": "Iniciando la carga del modelo de IA por primera vez."}))
-        
-        print(json.dumps({"log_name": "InitializeAI_Step", "mensaje": "Ejecutando vertexai.init() ..."}))
         vertexai.init(project=GCP_PROJECT_ID, location=LOCATION)
-        
-        print(json.dumps({"log_name": "InitializeAI_Step", "mensaje": "Inicializando GenerativeModel..."}))
         model = GenerativeModel(GEMINI_CHAT_MODEL, system_instruction=system_prompt, tools=[all_tools_config])
-        
         initialized = True
-        print(json.dumps({"log_name": "InitializeAI", "mensaje": "✅ Inicialización de IA completada exitosamente."}))
+        print(json.dumps({"log_name": "InitializeAI", "mensaje": "✅ Inicialización de IA completada."}))
 
-def handle_dex_logic(user_message: str, user_email: str, user_display_name: str) -> str:
+def execute_task_and_get_reply(user_message: str, user_email: str, user_display_name: str) -> str:
     """
-    Gestiona la lógica de conversación, asegurando que el modelo de IA esté inicializado.
+    Esta función contiene la lógica pesada. Es llamada por el trabajador de Cloud Tasks.
+    Realiza la llamada a Gemini, ejecuta herramientas y devuelve la respuesta final en texto.
     """
     try:
-        # --- CAMBIO CLAVE: Llama a la función de inicialización al principio ---
-        # Si ya está inicializado, esta función no hará nada.
+        # Paso 1: Asegurarse de que el modelo de IA esté listo.
         initialize_ai()
-        
-        print(json.dumps({
-            "log_name": "HandleDexLogic_Inicio",
-            "mensaje": "Iniciando lógica de Dex.",
-            "input": { "mensaje_usuario": user_message, "email_usuario": user_email }
-        }))
+        print(json.dumps({"log_name": "ExecuteTask", "mensaje": "Iniciando ejecución de tarea pesada."}))
 
-        authorized_domains = ["@connect.inc", "@consoda.com", "@premier.io"]
-        if not any(user_email.endswith(domain) for domain in authorized_domains):
-            return "Lo siento, solo puedo procesar solicitudes de dominios autorizados."
-
+        # Paso 2: Interactuar con el modelo de Gemini.
         chat = model.start_chat()
         response = chat.send_message(user_message)
-
+        
         function_call = response.candidates[0].content.parts[0].function_call
         
+        # Paso 3: Manejar la lógica de llamada a herramientas si es necesario.
         if function_call and function_call.name:
             tool_name = function_call.name
             tool_to_call = available_tools.get(tool_name)
@@ -106,22 +91,26 @@ def handle_dex_logic(user_message: str, user_email: str, user_display_name: str)
                 tool_args["solicitante"] = user_email
                 tool_args["nombre_solicitante"] = user_display_name
 
+            # Ejecutar la herramienta (ej. consulta a BigQuery)
             tool_response_text = tool_to_call(**tool_args)
             
+            # Devolver el resultado de la herramienta al modelo para una respuesta final.
             final_response = chat.send_message(
                 Part.from_function_response(name=tool_name, response={"content": tool_response_text})
             )
             final_text = final_response.text
         else:
+            # Si no hay herramientas, la respuesta es el texto directo del modelo.
             final_text = response.text
 
-        print(json.dumps({"log_name": "HandleDexLogic_Exito", "respuesta_texto": final_text}))
+        print(json.dumps({"log_name": "ExecuteTask_Exito", "respuesta_final": final_text}))
         return final_text
 
     except Exception as e:
         error_details = {
-            "log_name": "HandleDexLogic_Error", "nivel": "CRITICO",
-            "mensaje": "Error CRÍTICO en la lógica de Dex", "tipo_error": type(e).__name__,
+            "log_name": "ExecuteTask_Error", "nivel": "CRITICO",
+            "mensaje": "Error CRÍTICO durante la ejecución de la tarea en segundo plano.",
+            "tipo_error": type(e).__name__,
             "error": str(e), "traceback": traceback.format_exc()
         }
         print(json.dumps(error_details))
