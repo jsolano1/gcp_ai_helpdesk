@@ -4,7 +4,17 @@ from vertexai.generative_models import Tool, FunctionDeclaration
 crear_tiquete_declaration = FunctionDeclaration(
     name="crear_tiquete_helpdesk",
     description="Útil para crear un nuevo tiquete de soporte cuando un usuario reporta un problema.",
-    parameters={"type": "object", "properties": {"descripcion": {"type": "string"}, "solicitante": {"type": "string"}, "equipo_asignado": {"type": "string"}, "prioridad": {"type": "string"}}, "required": ["descripcion", "solicitante", "equipo_asignado", "prioridad"]}
+    parameters={
+        "type": "object",
+        "properties": {
+            "descripcion": {"type": "string"},
+            "solicitante": {"type": "string", "description": "El correo electrónico del usuario. El sistema lo provee."},
+            "nombre_solicitante": {"type": "string", "description": "El nombre del usuario. El sistema lo provee."},
+            "equipo_asignado": {"type": "string"},
+            "prioridad": {"type": "string"}
+        },
+        "required": ["descripcion", "equipo_asignado", "prioridad"]
+    }
 )
 
 consultar_estado_declaration = FunctionDeclaration(
