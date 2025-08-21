@@ -3,8 +3,6 @@ import json
 import traceback
 from flask import Flask, request, jsonify
 
-print(json.dumps({"log_name": "ServerStartup", "mensaje": "main.py cargado."}))
-
 app = Flask(__name__)
 
 @app.route("/", methods=["POST"])
@@ -12,13 +10,14 @@ def handle_chat_event():
     event_data = request.get_json(silent=True) or {}
     
     try:
-        # Para un bot estándar, el 'type' sí debería estar en el nivel superior
+        # Un bot estándar envía un JSON con la clave 'type' en el nivel superior
         if event_data.get('type') == 'MESSAGE':
-            from src.logic import handle_dex_logic
+            from src.logic import handle_dex_logic # Importación diferida
             
             user_message = event_data.get('message', {}).get('text', '').strip()
             user_info = event_data.get('user', {})
             
+            # Llamamos a la lógica síncrona
             final_text_reply = handle_dex_logic(
                 user_message=user_message,
                 user_email=user_info.get("email"),
@@ -26,13 +25,12 @@ def handle_chat_event():
             )
             
             # --- LA RESPUESTA CORRECTA PARA UN BOT ESTÁNDAR ---
-            # Un objeto 'Message' simple con solo texto.
             return jsonify({"text": final_text_reply})
         
         elif event_data.get('type') == 'ADDED_TO_SPACE':
             return jsonify({"text": "¡Gracias por añadirme! Soy Dex, tu asistente de Helpdesk."})
 
-        # Ignoramos otros tipos de eventos
+        # Ignoramos otros tipos de eventos (como REMOVED_FROM_SPACE)
         return jsonify({})
 
     except Exception as e:
