@@ -4,10 +4,17 @@ from vertexai.generative_models import Content, Part
 db = firestore.Client()
 HISTORY_COLLECTION = "chat_histories"
 
-def save_chat_history(user_id: str, history: list):
-    """Guarda el historial de una conversación en Firestore, si el user_id es válido."""
-    if not user_id or "/" not in user_id:
-        print(f"ID de usuario inválido, no se guardará el historial: {user_id}")
+def _get_clean_user_id(user_id_full: str) -> str:
+    """Extrae el ID numérico de la ruta 'users/12345'."""
+    if not user_id_full or "/" not in user_id_full:
+        return None
+    return user_id_full.split('/')[-1]
+
+def save_chat_history(user_id_full: str, history: list):
+    """Guarda el historial de una conversación en Firestore."""
+    user_id = _get_clean_user_id(user_id_full)
+    if not user_id:
+        print(f"ID de usuario inválido, no se guardará el historial: {user_id_full}")
         return
 
     try:
@@ -20,10 +27,11 @@ def save_chat_history(user_id: str, history: list):
     except Exception as e:
         print(f"Error al guardar el historial para {user_id}: {e}")
 
-def get_chat_history(user_id: str) -> list:
-    """Recupera el historial de una conversación desde Firestore, si el user_id es válido."""
-    if not user_id or "/" not in user_id:
-        print(f"ID de usuario inválido, no se obtendrá el historial: {user_id}")
+def get_chat_history(user_id_full: str) -> list:
+    """Recupera el historial de una conversación desde Firestore."""
+    user_id = _get_clean_user_id(user_id_full)
+    if not user_id:
+        print(f"ID de usuario inválido, no se obtendrá el historial: {user_id_full}")
         return []
 
     try:
