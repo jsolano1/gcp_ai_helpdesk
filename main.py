@@ -3,8 +3,6 @@ import json
 import traceback
 from flask import Flask, request, jsonify
 
-print(json.dumps({"log_name": "ServerStartup", "mensaje": "main.py cargado."}))
-
 app = Flask(__name__)
 
 @app.route("/", methods=["POST"])
@@ -12,6 +10,7 @@ def handle_chat_event():
     event_data = request.get_json(silent=True) or {}
     
     try:
+        # Un bot estándar envía un JSON con la clave 'type' en el nivel superior
         if event_data.get('type') == 'MESSAGE':
             from src.logic import handle_dex_logic
             
@@ -24,41 +23,16 @@ def handle_chat_event():
                 user_display_name=user_info.get("displayName")
             )
             
-            response_payload = {
-                "sections": [{
-                    "widgets": [{
-                        "textParagraph": {
-                            "text": final_text_reply
-                        }
-                    }]
-                }]
-            }
-            return jsonify(response_payload)
+            return jsonify({"text": final_text_reply})
         
         elif event_data.get('type') == 'ADDED_TO_SPACE':
-            return jsonify({
-                "sections": [{
-                    "widgets": [{
-                        "textParagraph": {
-                            "text": "¡Gracias por añadirme! Soy Dex, tu asistente de Helpdesk."
-                        }
-                    }]
-                }]
-            })
+            return jsonify({"text": "¡Gracias por añadirme! Soy Dex, tu asistente de Helpdesk."})
 
         return jsonify({})
 
     except Exception as e:
         print(json.dumps({"log_name": "HandleChatEvent_Error", "error": str(e), "traceback": traceback.format_exc()}))
-        return jsonify({
-            "sections": [{
-                "widgets": [{
-                    "textParagraph": {
-                        "text": "Ocurrió un error inesperado al procesar tu solicitud."
-                    }
-                }]
-            }]
-        })
+        return jsonify({"text": "Ocurrió un error inesperado."})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
