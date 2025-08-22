@@ -4,11 +4,13 @@ import json
 import uuid
 from datetime import datetime, timedelta
 from google.cloud import bigquery
-from src.utils.bigquery_client import client, registrar_evento, TICKETS_TABLE_ID, validar_tiquete
+# ¡IMPORTANTE! Añade la nueva función aquí
+from src.utils.bigquery_client import client, registrar_evento, TICKETS_TABLE_ID, validar_tiquete, obtener_departamento_tiquete
 from src.config import DATA_ENGINEERING_LEAD, BI_ANALYST_LEAD
 from src.services.ticket_querier import consultar_estado_tiquete
 from src.services.notification_service import enviar_notificacion_email, enviar_notificacion_chat
 
+# ... (La función crear_tiquete no necesita cambios) ...
 def crear_tiquete(descripcion: str, equipo_asignado: str, prioridad: str, solicitante: str, nombre_solicitante: str, **kwargs) -> str:
     """
     Crea un nuevo tiquete con un ID único y robusto, calcula su SLA y envía notificaciones.
@@ -85,82 +87,74 @@ def crear_tiquete(descripcion: str, equipo_asignado: str, prioridad: str, solici
         }))
         return f"Ocurrió un error crítico al intentar crear el tiquete: {e}"
 
-def cerrar_tiquete(ticket_id: str, resolucion: str, solicitante_email: str, solicitante_rol: str, **kwargs) -> str:
-    """Cierra un tiquete registrando un evento de cierre y aplicando lógica de RBAC."""
+
+def cerrar_tiquete(ticket_id: str, resolucion: str, solicitante_email: str, solicitante_rol: str, solicitante_departamento: str, **kwargs) -> str:
+    """Cierra un tiquete con validación de departamento para roles 'lead' y 'agent'."""
     id_normalizado, existe = validar_tiquete(ticket_id.upper())
-    if not existe:
-        return f"Error: El tiquete '{id_normalizado}' no fue encontrado."
-    
-    # --- LÓGICA DE PERMISOS RBAC ---
+    if not existe: return f"Error: El tiquete '{id_normalizado}' no fue encontrado."
+
+    # --- NUEVA CAPA DE SEGURIDAD POR DEPARTAMENTO ---
+    if solicitante_rol in ['lead', 'agent']:
+        departamento_tiquete = obtener_departamento_tiquete(id_normalizado)
+        if not departamento_tiquete:
+            return f"Error: No se pudo determinar el departamento del tiquete {id_normalizado}."
+        if departamento_tiquete != solicitante_departamento:
+            return f"Acción denegada. Tu rol solo permite gestionar tiquetes del departamento '{solicitante_departamento}'."
+
     if solicitante_rol == 'agent':
         estado_actual = consultar_estado_tiquete(id_normalizado)
-        # Un agente solo puede cerrar un tiquete si está asignado a él.
         if solicitante_email not in estado_actual:
-             return f"Acción denegada. Como 'agent', solo puedes cerrar tiquetes que están asignados a ti. Consulta con el responsable actual."
+             return f"Acción denegada. Como 'agent', solo puedes cerrar tiquetes asignados a ti."
 
-    # Roles 'admin' y 'lead' ya fueron validados en la capa de lógica y pueden proceder.
-    # El rol 'user' no tiene permiso para acceder a esta función.
-    
     try:
         detalles_cierre = {"resolucion": resolucion, "cerrado_por": solicitante_email}
         registrar_evento(id_normalizado, "CERRADO", solicitante_email, detalles_cierre)
-
-        mensaje_chat_cierre = f"✔️ Tiquete Cerrado: *{id_normalizado}*\n*Resolución:* {resolucion}"
-        enviar_notificacion_chat(mensaje_chat_cierre)
-
+        enviar_notificacion_chat(f"✔️ Tiquete Cerrado: *{id_normalizado}*\n*Resolución:* {resolucion}")
         return f"El tiquete {id_normalizado} ha sido marcado como cerrado."
     except Exception as e:
         print(f"🔴 Error al cerrar tiquete: {e}")
         return f"Ocurrió un error al cerrar el tiquete: {e}"
 
 def reasignar_tiquete(ticket_id: str, nuevo_responsable_email: str, solicitante_email: str, solicitante_rol: str, solicitante_departamento: str, **kwargs) -> str:
-    """Reasigna un tiquete, aplicando lógica de RBAC para roles y departamentos."""
+    """Reasigna un tiquete con validación de departamento para el rol 'lead'."""
     id_normalizado, existe = validar_tiquete(ticket_id.upper())
-    if not existe:
-        return f"Error: El tiquete '{id_normalizado}' no fue encontrado."
-    
-    # --- LÓGICA DE PERMISOS RBAC ---
-    if solicitante_rol == 'lead':
-        # Un 'lead' solo puede reasignar tiquetes dentro de su propio departamento.
-        # (Esta lógica requiere una función para obtener el departamento del tiquete)
-        # Por simplicidad, asumimos que la validación se hace aquí. Si el tiquete
-        # no pertenece a su departamento, se deniega.
-        # Por ejemplo: if obtener_departamento_tiquete(id_normalizado) != solicitante_departamento:
-        #   return "Acción denegada. Como 'lead', solo puedes reasignar tiquetes de tu departamento."
-        pass # Implementar lógica de verificación de departamento si es necesario.
+    if not existe: return f"Error: El tiquete '{id_normalizado}' no fue encontrado."
 
-    # El rol 'admin' puede reasignar cualquier tiquete.
-    # Los roles 'agent' y 'user' no tienen permiso para esta función.
+    # --- NUEVA CAPA DE SEGURIDAD POR DEPARTAMENTO ---
+    if solicitante_rol == 'lead':
+        departamento_tiquete = obtener_departamento_tiquete(id_normalizado)
+        if not departamento_tiquete:
+            return f"Error: No se pudo determinar el departamento del tiquete {id_normalizado}."
+        if departamento_tiquete != solicitante_departamento:
+            return f"Acción denegada. Como 'lead', solo puedes reasignar tiquetes de tu departamento ('{solicitante_departamento}')."
     
     try:
         current_status = consultar_estado_tiquete(id_normalizado)
-        detalles_reasignacion = {"nuevo_responsable": nuevo_responsable_email, "estado_anterior": current_status, "reasignado_por": solicitante_email}
-        registrar_evento(id_normalizado, "REASIGNADO", solicitante_email, detalles_reasignacion)
-
-        mensaje_chat_reasignacion = f"👤 Tiquete Reasignado: *{id_normalizado}*\n*Nuevo Responsable:* {nuevo_responsable_email}"
-        enviar_notificacion_chat(mensaje_chat_reasignacion)
-
+        detalles = {"nuevo_responsable": nuevo_responsable_email, "estado_anterior": current_status, "reasignado_por": solicitante_email}
+        registrar_evento(id_normalizado, "REASIGNADO", solicitante_email, detalles)
+        enviar_notificacion_chat(f"👤 Tiquete Reasignado: *{id_normalizado}*\n*Nuevo Responsable:* {nuevo_responsable_email}")
         return f"El tiquete {id_normalizado} ha sido reasignado a {nuevo_responsable_email}."
     except Exception as e:
         print(f"🔴 Error al reasignar tiquete: {e}")
         return f"Ocurrió un error al reasignar el tiquete: {e}"
 
-def modificar_sla_manual(ticket_id: str, nuevas_horas_sla: int, solicitante_email: str, solicitante_rol: str, **kwargs) -> str:
-    """Modifica manualmente el SLA de un tiquete, permitido solo para roles altos."""
+def modificar_sla_manual(ticket_id: str, nuevas_horas_sla: int, solicitante_email: str, solicitante_rol: str, solicitante_departamento: str, **kwargs) -> str:
+    """Modifica el SLA con validación de departamento para el rol 'lead'."""
     id_normalizado, existe = validar_tiquete(ticket_id.upper())
-    if not existe:
-        return f"Error: El tiquete '{id_normalizado}' no fue encontrado."
+    if not existe: return f"Error: El tiquete '{id_normalizado}' no fue encontrado."
 
-    # --- LÓGICA DE PERMISOS RBAC ---
-    # La lógica en `handle_dex_logic` ya previene que 'agent' y 'user' llamen a esta función.
-    # Solo 'admin' y 'lead' pueden proceder.
-    
+    # --- NUEVA CAPA DE SEGURIDAD POR DEPARTAMENTO ---
+    if solicitante_rol == 'lead':
+        departamento_tiquete = obtener_departamento_tiquete(id_normalizado)
+        if not departamento_tiquete:
+            return f"Error: No se pudo determinar el departamento del tiquete {id_normalizado}."
+        if departamento_tiquete != solicitante_departamento:
+            return f"Acción denegada. Como 'lead', solo puedes modificar el SLA de tiquetes de tu departamento ('{solicitante_departamento}')."
+
     try:
         query_fecha = f"SELECT FechaCreacion FROM `{TICKETS_TABLE_ID}` WHERE TicketID = @ticket_id"
         job_config_fecha = bigquery.QueryJobConfig(query_parameters=[bigquery.ScalarQueryParameter("ticket_id", "STRING", id_normalizado)])
-        results = list(client.query(query_fecha, job_config=job_config_fecha).result())
-        
-        fecha_creacion = results[0].FechaCreacion
+        fecha_creacion = list(client.query(query_fecha, job_config=job_config_fecha).result())[0].FechaCreacion
         nueva_fecha_vencimiento = fecha_creacion + timedelta(hours=nuevas_horas_sla)
         
         update_query = f"""
@@ -177,8 +171,8 @@ def modificar_sla_manual(ticket_id: str, nuevas_horas_sla: int, solicitante_emai
         )
         client.query(update_query, job_config=job_config_update).result()
         
-        detalles_modificacion = {"nuevo_sla_horas": nuevas_horas_sla, "modificado_por": solicitante_email}
-        registrar_evento(id_normalizado, "SLA_MODIFICADO", solicitante_email, detalles_modificacion)
+        detalles = {"nuevo_sla_horas": nuevas_horas_sla, "modificado_por": solicitante_email}
+        registrar_evento(id_normalizado, "SLA_MODIFICADO", solicitante_email, detalles)
         
         return f"El SLA del tiquete {id_normalizado} ha sido modificado a {nuevas_horas_sla} horas."
     except Exception as e:

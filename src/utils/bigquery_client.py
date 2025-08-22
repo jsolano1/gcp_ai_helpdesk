@@ -91,3 +91,28 @@ def obtener_rol_usuario(user_email: str) -> (str, str):
         print(f"🔴 Error al obtener el rol para {user_email}: {e}")
         # En caso de error, se asigna el rol más restrictivo por seguridad
         return "user", None
+
+def obtener_departamento_tiquete(ticket_id: str) -> str:
+    """
+    Consulta el evento de creación de un tiquete para obtener su departamento asignado.
+    """
+    id_normalizado = ticket_id.upper()
+    query = f"""
+        SELECT JSON_EXTRACT_SCALAR(Detalles, '$.equipo_asignado') as departamento
+        FROM `{EVENTOS_TABLE_ID}`
+        WHERE TicketID = @ticket_id AND TipoEvento = 'CREADO'
+        LIMIT 1
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("ticket_id", "STRING", id_normalizado)
+        ]
+    )
+    try:
+        results = list(client.query(query, job_config=job_config).result())
+        if results and results[0].departamento:
+            return results[0].departamento
+        return None  # Retorna None si no se encuentra
+    except Exception as e:
+        print(f"🔴 Error al obtener el departamento del tiquete {id_normalizado}: {e}")
+        return None
