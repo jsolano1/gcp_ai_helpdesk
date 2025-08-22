@@ -42,7 +42,10 @@ def get_or_create_active_session(user_id_full: str) -> str:
         return new_session_id
 
 def save_chat_history(session_id: str, user_id_full: str, history: list, num_existing: int):
-    """Guarda los nuevos mensajes en el documento de la sesión activa."""
+    """
+    Guarda los nuevos mensajes en Firestore usando el formato oficial de la librería
+    y añadiendo un timestamp.
+    """
     if not session_id: return
     
     history_doc_ref = db.collection(HISTORY_COLLECTION).document(session_id)
@@ -52,8 +55,10 @@ def save_chat_history(session_id: str, user_id_full: str, history: list, num_exi
     new_messages = history[num_existing:]
     if not new_messages: return
 
+    # 1. Convierte los objetos a diccionarios usando el método oficial .to_dict()
     items_to_save = [msg.to_dict() for msg in new_messages]
     
+    # 2. Añade nuestro campo personalizado 'timestamp' a cada diccionario
     for item in items_to_save:
         item['timestamp'] = now
 
@@ -67,7 +72,7 @@ def save_chat_history(session_id: str, user_id_full: str, history: list, num_exi
 
 def get_chat_history(session_id: str) -> list:
     """
-    Recupera y reconstruye el historial, eliminando los campos extra antes de pasarlos a la librería.
+    Recupera el historial y lo prepara para la librería, eliminando campos personalizados.
     """
     if not session_id: return []
     
@@ -80,17 +85,14 @@ def get_chat_history(session_id: str) -> list:
     reconstructed_history = []
     
     for item in history_from_db:
-        # --- ESTA ES LA CORRECCIÓN CLAVE Y DEFINITIVA ---
+        # --- ESTA ES LA CORRECCIÓN HOLÍSTICA Y DEFINITIVA ---
         # 1. Crea un diccionario limpio solo con los campos que la librería entiende.
         clean_item = {
             "role": item.get("role"),
             "parts": item.get("parts", [])
         }
         
-        # 2. Asegúrate de que no haya partes vacías
-        clean_item["parts"] = [p for p in clean_item["parts"] if p]
-        
-        # 3. Solo si hay contenido, lo reconstruimos
+        # 2. Reconstruye el objeto Content usando el diccionario limpio
         if clean_item["parts"]:
             reconstructed_history.append(Content.from_dict(clean_item))
             
