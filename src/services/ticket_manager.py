@@ -2,13 +2,13 @@ import json
 import uuid
 from datetime import datetime, timedelta
 from google.cloud import bigquery
-from src/utils/bigquery_client import (
+from src.utils.bigquery_client import (
     client, registrar_evento, TICKETS_TABLE_ID, validar_tiquete, 
     obtener_departamento_tiquete, obtener_sla_por_configuracion
 )
-from src/config import DATA_ENGINEERING_LEAD, BI_ANALYST_LEAD
-from src/services.ticket_querier import consultar_estado_tiquete
-from src/services.notification_service import enviar_notificacion_email, enviar_notificacion_chat
+from src.config import DATA_ENGINEERING_LEAD, BI_ANALYST_LEAD
+from src.services.ticket_querier import consultar_estado_tiquete
+from src.services.notification_service import enviar_notificacion_email, enviar_notificacion_chat
 
 
 def crear_tiquete(descripcion: str, equipo_asignado: str, prioridad: str, solicitante: str, nombre_solicitante: str, **kwargs) -> str:
@@ -33,7 +33,6 @@ def crear_tiquete(descripcion: str, equipo_asignado: str, prioridad: str, solici
         
         responsable = DATA_ENGINEERING_LEAD if equipo_asignado == "Data Engineering" else BI_ANALYST_LEAD
         
-        # --- Inserción en BigQuery ---
         insert_ticket_query = f"""
             INSERT INTO `{TICKETS_TABLE_ID}` (TicketID, Solicitante, FechaCreacion, SLA_Horas, FechaVencimiento)
             VALUES (@ticket_id, @solicitante, @fecha_creacion, @sla_horas, @fecha_vencimiento)
@@ -78,7 +77,6 @@ def cerrar_tiquete(ticket_id: str, resolucion: str, solicitante_email: str, soli
     id_normalizado, existe = validar_tiquete(ticket_id.upper())
     if not existe: return f"Error: El tiquete '{id_normalizado}' no fue encontrado."
 
-    # --- NUEVA CAPA DE SEGURIDAD POR DEPARTAMENTO ---
     if solicitante_rol in ['lead', 'agent']:
         departamento_tiquete = obtener_departamento_tiquete(id_normalizado)
         if not departamento_tiquete:
@@ -105,7 +103,6 @@ def reasignar_tiquete(ticket_id: str, nuevo_responsable_email: str, solicitante_
     id_normalizado, existe = validar_tiquete(ticket_id.upper())
     if not existe: return f"Error: El tiquete '{id_normalizado}' no fue encontrado."
 
-    # --- NUEVA CAPA DE SEGURIDAD POR DEPARTAMENTO ---
     if solicitante_rol == 'lead':
         departamento_tiquete = obtener_departamento_tiquete(id_normalizado)
         if not departamento_tiquete:
@@ -128,7 +125,6 @@ def modificar_sla_manual(ticket_id: str, nuevas_horas_sla: int, solicitante_emai
     id_normalizado, existe = validar_tiquete(ticket_id.upper())
     if not existe: return f"Error: El tiquete '{id_normalizado}' no fue encontrado."
 
-    # --- NUEVA CAPA DE SEGURIDAD POR DEPARTAMENTO ---
     if solicitante_rol == 'lead':
         departamento_tiquete = obtener_departamento_tiquete(id_normalizado)
         if not departamento_tiquete:
