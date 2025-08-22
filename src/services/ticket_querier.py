@@ -1,4 +1,3 @@
-
 import os
 import json
 from dotenv import load_dotenv
@@ -9,10 +8,9 @@ from src.utils.bigquery_client import client, TICKETS_TABLE_ID, EVENTOS_TABLE_ID
 load_dotenv()
 GEMINI_TASK_MODEL = os.getenv("GEMINI_TASK_MODEL")
 
-def consultar_estado_tiquete(ticket_id: str) -> str:
+def consultar_estado_tiquete(ticket_id: str, **kwargs) -> str:
     """Consulta el último evento para determinar el estado actual de un tiquete."""
     ticket_id = ticket_id.upper()
-    id_normalizado, existe = validar_tiquete(ticket_id)
     query = f"""
         SELECT TipoEvento, Detalles
         FROM `{EVENTOS_TABLE_ID}`
@@ -40,9 +38,9 @@ def consultar_estado_tiquete(ticket_id: str) -> str:
     except Exception as e:
         print(f"🔴 Error al consultar estado: {e}")
         return f"Ocurrió un error al consultar el estado del tiquete: {e}"
-    pass
 
-def consultar_metricas(pregunta_del_usuario: str) -> str:
+
+def consultar_metricas(pregunta_del_usuario: str, **kwargs) -> str:
     """Convierte una pregunta en lenguaje natural sobre métricas de tiquetes en una consulta SQL."""
     model = GenerativeModel(GEMINI_TASK_MODEL)
     
@@ -84,4 +82,3 @@ def consultar_metricas(pregunta_del_usuario: str) -> str:
     except Exception as e:
         print(f"🔴 Error al consultar métricas: {e}")
         return f"Ocurrió un error al procesar la consulta de métricas: {e}"
-    pass
