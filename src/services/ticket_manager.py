@@ -1,38 +1,28 @@
-# src/services/ticket_manager.py
-
 import json
 import uuid
 from datetime import datetime, timedelta
 from google.cloud import bigquery
-# ¡IMPORTANTE! Añade la nueva función aquí
-from src.utils.bigquery_client import client, registrar_evento, TICKETS_TABLE_ID, validar_tiquete, obtener_departamento_tiquete
-from src.config import DATA_ENGINEERING_LEAD, BI_ANALYST_LEAD
-from src.services.ticket_querier import consultar_estado_tiquete
-from src.services.notification_service import enviar_notificacion_email, enviar_notificacion_chat
+from src/utils/bigquery_client import (
+    client, registrar_evento, TICKETS_TABLE_ID, validar_tiquete, 
+    obtener_departamento_tiquete, obtener_sla_por_configuracion
+)
+from src/config import DATA_ENGINEERING_LEAD, BI_ANALYST_LEAD
+from src/services.ticket_querier import consultar_estado_tiquete
+from src/services.notification_service import enviar_notificacion_email, enviar_notificacion_chat
 
-# ... (La función crear_tiquete no necesita cambios) ...
+
 def crear_tiquete(descripcion: str, equipo_asignado: str, prioridad: str, solicitante: str, nombre_solicitante: str, **kwargs) -> str:
     """
-    Crea un nuevo tiquete con un ID único y robusto, calcula su SLA y envía notificaciones.
-    El rol del usuario ya fue validado en la capa de lógica, por lo que cualquier rol permitido puede crear un tiquete.
+    Crea un nuevo tiquete consultando dinámicamente el SLA desde BigQuery.
     """
     print(json.dumps({
-        "log_name": "CrearTiquete_Inicio",
-        "mensaje": "Iniciando la creación de un nuevo tiquete.",
-        "parametros": {
-            "solicitante": solicitante,
-            "equipo_asignado": equipo_asignado,
-            "prioridad": prioridad
-        }
+        "log_name": "CrearTiquete_Inicio", "mensaje": "Iniciando la creación de un nuevo tiquete.",
+        "parametros": {"solicitante": solicitante, "equipo_asignado": equipo_asignado, "prioridad": prioridad}
     }))
     
     try:
-        # --- Lógica de cálculo de SLA ---
-        sla_map = {"alta": 8, "media": 24, "baja": 72}
-        prioridad_limpia = prioridad.lower()
-        if "alta" in prioridad_limpia: sla_horas = sla_map["alta"]
-        elif "baja" in prioridad_limpia: sla_horas = sla_map["baja"]
-        else: sla_horas = sla_map["media"]
+        sla_horas = obtener_sla_por_configuracion(equipo_asignado, prioridad)
+        print(f"✅ SLA obtenido de BigQuery para {equipo_asignado}/{prioridad}: {sla_horas} horas.")
         
         fecha_creacion = datetime.utcnow()
         fecha_vencimiento = fecha_creacion + timedelta(hours=sla_horas)
@@ -40,8 +30,7 @@ def crear_tiquete(descripcion: str, equipo_asignado: str, prioridad: str, solici
         timestamp_id = fecha_creacion.strftime('%Y%m%d')
         unique_hash = str(uuid.uuid4().hex)[:4].upper()
         ticket_id = f"DEX-{timestamp_id}-{unique_hash}"
-        print(json.dumps({"log_name": "CrearTiquete_Info", "mensaje": f"ID de tiquete único generado: {ticket_id}"}))
-
+        
         responsable = DATA_ENGINEERING_LEAD if equipo_asignado == "Data Engineering" else BI_ANALYST_LEAD
         
         # --- Inserción en BigQuery ---
@@ -59,12 +48,10 @@ def crear_tiquete(descripcion: str, equipo_asignado: str, prioridad: str, solici
             ]
         )
         client.query(insert_ticket_query, job_config=job_config_ticket).result()
-        print(json.dumps({"log_name": "CrearTiquete_Info", "mensaje": f"Tiquete {ticket_id} insertado en BigQuery."}))
-
+        
         detalles_creacion = {"descripcion": descripcion, "equipo_asignado": equipo_asignado, "responsable_inicial": responsable, "prioridad_asignada": prioridad, "sla_calculado_horas": sla_horas}
         registrar_evento(ticket_id, "CREADO", solicitante, detalles_creacion)        
         
-        # --- Lógica de Notificaciones ---
         primer_nombre = nombre_solicitante.split(" ")[0]
 
         asunto_solicitante = f"✅ Tiquete Creado Exitosamente: {ticket_id}"
@@ -82,9 +69,7 @@ def crear_tiquete(descripcion: str, equipo_asignado: str, prioridad: str, solici
         return response_text
 
     except Exception as e:
-        print(json.dumps({
-            "log_name": "CrearTiquete_Error", "nivel": "CRITICO", "mensaje": "Error no manejado durante la creación del tiquete.", "error": str(e)
-        }))
+        print(json.dumps({"log_name": "CrearTiquete_Error", "nivel": "CRITICO", "mensaje": "Error no manejado", "error": str(e)}))
         return f"Ocurrió un error crítico al intentar crear el tiquete: {e}"
 
 

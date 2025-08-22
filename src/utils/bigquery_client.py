@@ -10,6 +10,7 @@ client = bigquery.Client(project=GCP_PROJECT_ID)
 ROLES_TABLE_ID = f"{GCP_PROJECT_ID}.{BIGQUERY_DATASET_ID}.roles_usuarios"
 TICKETS_TABLE_ID = f"{GCP_PROJECT_ID}.{BIGQUERY_DATASET_ID}.{TICKETS_TABLE_NAME}"
 EVENTOS_TABLE_ID = f"{GCP_PROJECT_ID}.{BIGQUERY_DATASET_ID}.{EVENTOS_TABLE_NAME}"
+SLA_CONFIG_TABLE_ID = f"{GCP_PROJECT_ID}.{BIGQUERY_DATASET_ID}.sla_configuracion"
 
 def registrar_evento(ticket_id: str, tipo_evento: str, autor: str, detalles: dict):
     """Función centralizada para insertar un nuevo evento en la tabla de eventos."""
@@ -116,3 +117,38 @@ def obtener_departamento_tiquete(ticket_id: str) -> str:
     except Exception as e:
         print(f"🔴 Error al obtener el departamento del tiquete {id_normalizado}: {e}")
         return None
+
+def obtener_sla_por_configuracion(departamento: str, prioridad: str) -> int:
+    """
+    Consulta la tabla de configuración para obtener las horas de SLA.
+    Si no encuentra una regla específica, devuelve un SLA por defecto de 24 horas.
+    """
+    prioridad_limpia = prioridad.lower()
+    if "alta" in prioridad_limpia: prioridad_final = "alta"
+    elif "baja" in prioridad_limpia: prioridad_final = "baja"
+    else: prioridad_final = "media"
+    
+    query = f"""
+        SELECT sla_hours
+        FROM `{SLA_CONFIG_TABLE_ID}`
+        WHERE department = @department AND priority = @priority
+        LIMIT 1
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("department", "STRING", departamento),
+            bigquery.ScalarQueryParameter("priority", "STRING", prioridad_final),
+        ]
+    )
+    
+    try:
+        results = list(client.query(query, job_config=job_config).result())
+        if results:
+            return results[0].sla_hours
+        else:
+            print(f"⚠️ Advertencia: No se encontró configuración de SLA para {departamento}/{prioridad_final}. Usando 24h por defecto.")
+            return 24
+            
+    except Exception as e:
+        print(f"🔴 Error al obtener configuración de SLA: {e}. Usando 24h por defecto.")
+        return 24
