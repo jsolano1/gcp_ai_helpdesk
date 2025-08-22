@@ -72,7 +72,7 @@ def save_chat_history(session_id: str, user_id_full: str, history: list, num_exi
 
 def get_chat_history(session_id: str) -> list:
     """
-    Recupera el historial y lo prepara para la librería, eliminando campos personalizados.
+    Recupera el historial y lo prepara para la librería, eliminando los campos extra.
     """
     if not session_id: return []
     
@@ -85,7 +85,6 @@ def get_chat_history(session_id: str) -> list:
     reconstructed_history = []
     
     for item in history_from_db:
-        # --- ESTA ES LA CORRECCIÓN HOLÍSTICA Y DEFINITIVA ---
         # 1. Crea un diccionario limpio solo con los campos que la librería entiende.
         clean_item = {
             "role": item.get("role"),
