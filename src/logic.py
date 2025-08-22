@@ -5,7 +5,6 @@ from dotenv import load_dotenv
 import vertexai
 from vertexai.generative_models import GenerativeModel, Part
 
-# --- CONFIGURACIÓN ---
 load_dotenv()
 GEMINI_CHAT_MODEL = os.getenv("GEMINI_CHAT_MODEL")
 from src.config import GCP_PROJECT_ID, LOCATION
@@ -14,11 +13,9 @@ from src.tools.tool_definitions import all_tools_config
 from src.services.memory_service import get_chat_history, save_chat_history
 from src.utils.bigquery_client import obtener_rol_usuario
 
-# --- INICIALIZACIÓN DIFERIDA (LAZY INITIALIZATION) ---
 model = None
 initialized = False
 
-# --- PROMPT Y PERSONALIDAD ---
 system_prompt = """
 Eres 'Bladi', un asistente de Helpdesk virtual experto en todo lo referente a IT manager. Tu motor es Gemini 2.5 flash. Tu misión es entender la solicitud del usuario, determinar su prioridad, y ayudarlo a gestionar tiquetes de soporte de manera eficiente y amigable para el equipo correcto con el sla que cumple con la solicitud.
 **## Reglas Clave ##**
@@ -69,7 +66,7 @@ def tiene_permiso(rol: str, herramienta: str) -> bool:
         return True
     return herramienta in permisos.get(rol, [])
 
-def handle_dex_logic(user_message: str, user_email: str, user_display_name: str, user_id: str) -> str:
+ddef handle_dex_logic(user_message: str, user_email: str, user_display_name: str, user_id: str) -> str:
     """
     Maneja la lógica de la conversación con el nuevo sistema RBAC.
     """
@@ -79,6 +76,8 @@ def handle_dex_logic(user_message: str, user_email: str, user_display_name: str,
         user_role, user_department = obtener_rol_usuario(user_email)
         
         history = get_chat_history(user_id)
+        num_initial_messages = len(history)
+        
         chat = model.start_chat(history=history)
         
         mensaje_con_contexto = f"[Mi nombre es {user_display_name.split(' ')[0]}] {user_message}"

@@ -1,5 +1,6 @@
 from google.cloud import firestore
 from vertexai.generative_models import Content, Part
+from datetime import datetime
 
 db = firestore.Client()
 HISTORY_COLLECTION = "chat_histories"
@@ -10,8 +11,11 @@ def _get_clean_user_id(user_id_full: str) -> str:
         return None
     return user_id_full.split('/')[-1]
 
-def save_chat_history(user_id_full: str, history: list):
-    """Guarda el historial de una conversación en Firestore."""
+def save_chat_history(user_id_full: str, history: list, num_existing_messages: int):
+    """
+    Guarda solo los nuevos mensajes de una conversación en Firestore,
+    incluyendo un timestamp para cada uno.
+    """
     user_id = _get_clean_user_id(user_id_full)
     if not user_id:
         print(f"ID de usuario inválido, no se guardará el historial: {user_id_full}")
@@ -19,11 +23,23 @@ def save_chat_history(user_id_full: str, history: list):
 
     try:
         doc_ref = db.collection(HISTORY_COLLECTION).document(user_id)
-        history_to_save = [
-            {"role": item.role, "parts": [part.text for part in item.parts]}
-            for item in history
+        
+        new_messages = history[num_existing_messages:]
+        
+        if not new_messages:
+            return 
+
+        new_history_items_to_save = [
+            {
+                "role": item.role,
+                "parts": [part.text for part in item.parts],
+                "timestamp": datetime.utcnow() 
+            }
+            for item in new_messages
         ]
-        doc_ref.set({"history": history_to_save})
+        
+        doc_ref.set({"history": firestore.ArrayUnion(new_history_items_to_save)}, merge=True)
+
     except Exception as e:
         print(f"Error al guardar el historial para {user_id}: {e}")
 
