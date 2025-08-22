@@ -12,6 +12,7 @@ from src.config import GCP_PROJECT_ID, LOCATION
 from src.services import ticket_manager, ticket_querier, ticket_visualizer
 from src.tools.tool_definitions import all_tools_config
 from src.services.memory_service import get_chat_history, save_chat_history
+from src.utils.bigquery_client import obtener_rol_usuario
 
 # --- INICIALIZACIÓN DIFERIDA (LAZY INITIALIZATION) ---
 model = None
@@ -56,24 +57,33 @@ def initialize_ai():
         model = GenerativeModel(GEMINI_CHAT_MODEL, system_instruction=system_prompt, tools=[all_tools_config])
         initialized = True
 
+def tiene_permiso(rol: str, herramienta: str) -> bool:
+    """Verifica si un rol tiene permiso para usar una herramienta."""
+    permisos = {
+        "admin": ["crear_tiquete_helpdesk", "consultar_estado_tiquete", "cerrar_tiquete", "reasignar_tiquete", "modificar_sla_manual", "visualizar_flujo_tiquete", "consultar_metricas"],
+        "lead": ["crear_tiquete_helpdesk", "consultar_estado_tiquete", "cerrar_tiquete", "reasignar_tiquete", "modificar_sla_manual", "visualizar_flujo_tiquete", "consultar_metricas"],
+        "agent": ["crear_tiquete_helpdesk", "consultar_estado_tiquete", "cerrar_tiquete", "visualizar_flujo_tiquete", "consultar_metricas"],
+        "user": ["crear_tiquete_helpdesk", "consultar_estado_tiquete", "visualizar_flujo_tiquete", "consultar_metricas"]
+    }
+    if rol == "admin":
+        return True
+    return herramienta in permisos.get(rol, [])
+
 def handle_dex_logic(user_message: str, user_email: str, user_display_name: str, user_id: str) -> str:
     """
-    Maneja la lógica de la conversación usando Firestore para la memoria.
+    Maneja la lógica de la conversación con el nuevo sistema RBAC.
     """
     try:
         initialize_ai()
         
-        # 1. Recupera el historial de la conversación desde Firestore.
-        history = get_chat_history(user_id)
+        user_role, user_department = obtener_rol_usuario(user_email)
         
-        # 2. Inicia el chat CON el historial previo para tener contexto.
+        history = get_chat_history(user_id)
         chat = model.start_chat(history=history)
         
-        # Enriquece el mensaje con el nombre para que la IA lo use.
         mensaje_con_contexto = f"[Mi nombre es {user_display_name.split(' ')[0]}] {user_message}"
         response = chat.send_message(mensaje_con_contexto)
         
-        # Bucle para buscar y manejar llamadas a funciones (herramientas).
         function_call = None
         for part in response.candidates[0].content.parts:
             if part.function_call and part.function_call.name:
@@ -82,14 +92,28 @@ def handle_dex_logic(user_message: str, user_email: str, user_display_name: str,
         
         if function_call:
             tool_name = function_call.name
+            
+            print(f"▶️  Verificando permiso para rol '{user_role}' en herramienta '{tool_name}'...")
+            if not tiene_permiso(user_role, tool_name):
+                print(f"🚫 Acceso denegado para {user_email} (rol: {user_role}) a la herramienta {tool_name}.")
+                return f"Lo siento, {user_display_name.split(' ')[0]}, tu rol de '{user_role}' no te permite realizar esta acción."
+
+            print("✅ Permiso concedido.")
             tool_to_call = available_tools.get(tool_name)
             if not tool_to_call: raise ValueError(f"Herramienta desconocida: {tool_name}")
 
             tool_args = {key: value for key, value in function_call.args.items()}
             
+            tool_args["solicitante_email"] = user_email
+            tool_args["solicitante_nombre"] = user_display_name
+            tool_args["solicitante_rol"] = user_role
+            tool_args["solicitante_departamento"] = user_department
+            
             if tool_name == "crear_tiquete_helpdesk":
-                tool_args["solicitante"] = user_email
-                tool_args["nombre_solicitante"] = user_display_name
+                 tool_args.pop("solicitante", None)
+                 tool_args.pop("nombre_solicitante", None)
+                 tool_args["solicitante"] = user_email
+                 tool_args["nombre_solicitante"] = user_display_name
 
             tool_response_text = tool_to_call(**tool_args)
             
@@ -100,9 +124,7 @@ def handle_dex_logic(user_message: str, user_email: str, user_display_name: str,
         else:
             final_text = response.text
         
-        # 3. Guarda el historial actualizado en Firestore para la próxima interacción.
         save_chat_history(user_id, chat.history)
-
         return final_text
 
     except Exception as e:

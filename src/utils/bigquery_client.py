@@ -7,7 +7,7 @@ from google.cloud import bigquery
 from src.config import GCP_PROJECT_ID, BIGQUERY_DATASET_ID, TICKETS_TABLE_NAME, EVENTOS_TABLE_NAME
 
 client = bigquery.Client(project=GCP_PROJECT_ID)
-
+ROLES_TABLE_ID = f"{GCP_PROJECT_ID}.{BIGQUERY_DATASET_ID}.roles_usuarios"
 TICKETS_TABLE_ID = f"{GCP_PROJECT_ID}.{BIGQUERY_DATASET_ID}.{TICKETS_TABLE_NAME}"
 EVENTOS_TABLE_ID = f"{GCP_PROJECT_ID}.{BIGQUERY_DATASET_ID}.{EVENTOS_TABLE_NAME}"
 
@@ -58,3 +58,36 @@ def validar_tiquete(ticket_id: str) -> (str, bool):
     except Exception as e:
         print(f"🔴 Error al validar el tiquete {id_normalizado}: {e}")
         return id_normalizado, False
+
+def obtener_rol_usuario(user_email: str) -> (str, str):
+    """
+    Consulta la tabla de roles para obtener el rol y departamento de un usuario.
+    Si el usuario no se encuentra, devuelve el rol 'user' por defecto.
+    """
+    query = f"""
+        SELECT role, department
+        FROM `{ROLES_TABLE_ID}`
+        WHERE user_email = @user_email
+        LIMIT 1
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("user_email", "STRING", user_email)
+        ]
+    )
+    
+    try:
+        results = list(client.query(query, job_config=job_config).result())
+        if results:
+            user_data = results[0]
+            print(f"✅ Rol encontrado para {user_email}: {user_data.role}")
+            return user_data.role, user_data.department
+        else:
+            # Si no está en la tabla, es un usuario estándar
+            print(f"✅ Usuario {user_email} no encontrado en tabla de roles. Asignado rol 'user'.")
+            return "user", None
+            
+    except Exception as e:
+        print(f"🔴 Error al obtener el rol para {user_email}: {e}")
+        # En caso de error, se asigna el rol más restrictivo por seguridad
+        return "user", None
