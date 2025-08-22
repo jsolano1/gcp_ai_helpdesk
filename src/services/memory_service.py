@@ -15,29 +15,26 @@ def _get_clean_user_id(user_id_full: str) -> str:
 
 def _serialize_part(part: Part) -> dict:
     """
-    Convierte un objeto Part a un diccionario para guardarlo en Firestore.
-    --- CORRECCIÓN CLAVE: Se verifica primero por function_call y function_response ---
+    Convierte un objeto Part a un diccionario para guardarlo en Firestore,
+    asegurándose de que todos los tipos de datos son compatibles.
     """
-    # 1. Primero, verificar si es una llamada a una herramienta (la causa del error)
     if part.function_call:
+        # --- CORRECCIÓN CLAVE: Convertir explícitamente a un dict estándar ---
         return {
             "type": "function_call",
             "name": part.function_call.name,
-            "args": dict(part.function_call.args)
+            "args": {key: value for key, value in part.function_call.args.items()}
         }
-    # 2. Luego, verificar si es una respuesta de una herramienta
     if part.function_response:
+        # Hacemos lo mismo para la respuesta, por seguridad
         return {
             "type": "function_response",
             "name": part.function_response.name,
-            "content": part.function_response.response
+            "content": {key: value for key, value in part.function_response.response.items()}
         }
-    # 3. Si no es ninguna de las anteriores, es texto.
-    # Usamos hasattr para una comprobación segura final.
     if hasattr(part, 'text'):
         return {"type": "text", "content": part.text}
     
-    # Si por alguna razón la parte está vacía, no devolvemos nada
     return {}
 
 def _deserialize_part(part_dict: dict) -> Part:
