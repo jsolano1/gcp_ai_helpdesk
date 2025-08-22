@@ -66,7 +66,8 @@ def tiene_permiso(rol: str, herramienta: str) -> bool:
         return True
     return herramienta in permisos.get(rol, [])
 
-ddef handle_dex_logic(user_message: str, user_email: str, user_display_name: str, user_id: str) -> str:
+# --- CORRECCIÓN AQUÍ (se eliminó la 'd' extra) ---
+def handle_dex_logic(user_message: str, user_email: str, user_display_name: str, user_id: str) -> str:
     """
     Maneja la lógica de la conversación con el nuevo sistema RBAC.
     """
@@ -123,7 +124,7 @@ ddef handle_dex_logic(user_message: str, user_email: str, user_display_name: str
         else:
             final_text = response.text
         
-        save_chat_history(user_id, chat.history)
+        save_chat_history(user_id, chat.history, num_initial_messages)
         return final_text
 
     except Exception as e:
