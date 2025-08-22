@@ -10,7 +10,8 @@ GEMINI_CHAT_MODEL = os.getenv("GEMINI_CHAT_MODEL")
 from src.config import GCP_PROJECT_ID, LOCATION
 from src.services import ticket_manager, ticket_querier, ticket_visualizer
 from src.tools.tool_definitions import all_tools_config
-from src.services.memory_service import get_chat_history, save_chat_history
+from src.services.memory_service import get_chat_history, save_chat_history, get_or_create_active_session
+
 from src.utils.bigquery_client import obtener_rol_usuario
 
 model = None
@@ -66,17 +67,23 @@ def tiene_permiso(rol: str, herramienta: str) -> bool:
         return True
     return herramienta in permisos.get(rol, [])
 
-# --- CORRECCIÓN AQUÍ (se eliminó la 'd' extra) ---
 def handle_dex_logic(user_message: str, user_email: str, user_display_name: str, user_id: str) -> str:
     """
-    Maneja la lógica de la conversación con el nuevo sistema RBAC.
+    Maneja la lógica de la conversación usando un sistema de sesiones activas.
     """
     try:
         initialize_ai()
         
+        # 1. OBTENER O CREAR LA SESIÓN ACTIVA
+        # Esta es la nueva puerta de entrada. Determina qué conversación usar.
+        session_id = get_or_create_active_session(user_id)
+        if not session_id:
+            return "Lo siento, no pude iniciar una sesión de chat para ti."
+
         user_role, user_department = obtener_rol_usuario(user_email)
         
-        history = get_chat_history(user_id)
+        # 2. Las demás funciones ahora usan el session_id
+        history = get_chat_history(session_id)
         num_initial_messages = len(history)
         
         chat = model.start_chat(history=history)
@@ -84,6 +91,7 @@ def handle_dex_logic(user_message: str, user_email: str, user_display_name: str,
         mensaje_con_contexto = f"[Mi nombre es {user_display_name.split(' ')[0]}] {user_message}"
         response = chat.send_message(mensaje_con_contexto)
         
+        # ... (el resto de la lógica de tool calling es exactamente la misma)
         function_call = None
         for part in response.candidates[0].content.parts:
             if part.function_call and part.function_call.name:
@@ -93,12 +101,9 @@ def handle_dex_logic(user_message: str, user_email: str, user_display_name: str,
         if function_call:
             tool_name = function_call.name
             
-            print(f"▶️  Verificando permiso para rol '{user_role}' en herramienta '{tool_name}'...")
             if not tiene_permiso(user_role, tool_name):
-                print(f"🚫 Acceso denegado para {user_email} (rol: {user_role}) a la herramienta {tool_name}.")
                 return f"Lo siento, {user_display_name.split(' ')[0]}, tu rol de '{user_role}' no te permite realizar esta acción."
 
-            print("✅ Permiso concedido.")
             tool_to_call = available_tools.get(tool_name)
             if not tool_to_call: raise ValueError(f"Herramienta desconocida: {tool_name}")
 
@@ -124,7 +129,8 @@ def handle_dex_logic(user_message: str, user_email: str, user_display_name: str,
         else:
             final_text = response.text
         
-        save_chat_history(user_id, chat.history, num_initial_messages)
+        # 3. Guardar el historial en la sesión activa
+        save_chat_history(session_id, user_id, chat.history, num_initial_messages)
         return final_text
 
     except Exception as e:
