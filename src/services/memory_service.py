@@ -52,10 +52,8 @@ def save_chat_history(session_id: str, user_id_full: str, history: list, num_exi
     new_messages = history[num_existing:]
     if not new_messages: return
 
-    # Convierte los objetos Content a diccionarios usando el método oficial de la librería
     items_to_save = [msg.to_dict() for msg in new_messages]
     
-    # Añade nuestro timestamp a cada item guardado
     for item in items_to_save:
         item['timestamp'] = now
 
@@ -69,7 +67,7 @@ def save_chat_history(session_id: str, user_id_full: str, history: list, num_exi
 
 def get_chat_history(session_id: str) -> list:
     """
-    Recupera y reconstruye el historial completo de una sesión usando Content.from_dict.
+    Recupera y reconstruye el historial, eliminando los campos extra antes de pasarlos a la librería.
     """
     if not session_id: return []
     
@@ -79,8 +77,21 @@ def get_chat_history(session_id: str) -> list:
         return []
 
     history_from_db = doc.to_dict().get("history", [])
+    reconstructed_history = []
     
-    # Reconstruye la lista de objetos Content usando el método oficial de la librería
-    reconstructed_history = [Content.from_dict(item) for item in history_from_db]
+    for item in history_from_db:
+        # --- ESTA ES LA CORRECCIÓN CLAVE Y DEFINITIVA ---
+        # 1. Crea un diccionario limpio solo con los campos que la librería entiende.
+        clean_item = {
+            "role": item.get("role"),
+            "parts": item.get("parts", [])
+        }
+        
+        # 2. Asegúrate de que no haya partes vacías
+        clean_item["parts"] = [p for p in clean_item["parts"] if p]
+        
+        # 3. Solo si hay contenido, lo reconstruimos
+        if clean_item["parts"]:
+            reconstructed_history.append(Content.from_dict(clean_item))
             
     return reconstructed_history
