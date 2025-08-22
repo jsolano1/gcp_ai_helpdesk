@@ -14,21 +14,30 @@ def _get_clean_user_id(user_id_full: str) -> str:
     return user_id_full.split('/')[-1]
 
 def _serialize_part(part: Part) -> dict:
-    """Convierte un objeto Part a un diccionario para guardarlo en Firestore."""
-    if part.text:
-        return {"type": "text", "content": part.text}
+    """
+    Convierte un objeto Part a un diccionario para guardarlo en Firestore.
+    --- CORRECCIÓN CLAVE: Se verifica primero por function_call y function_response ---
+    """
+    # 1. Primero, verificar si es una llamada a una herramienta (la causa del error)
     if part.function_call:
         return {
             "type": "function_call",
             "name": part.function_call.name,
             "args": dict(part.function_call.args)
         }
+    # 2. Luego, verificar si es una respuesta de una herramienta
     if part.function_response:
         return {
             "type": "function_response",
             "name": part.function_response.name,
             "content": part.function_response.response
         }
+    # 3. Si no es ninguna de las anteriores, es texto.
+    # Usamos hasattr para una comprobación segura final.
+    if hasattr(part, 'text'):
+        return {"type": "text", "content": part.text}
+    
+    # Si por alguna razón la parte está vacía, no devolvemos nada
     return {}
 
 def _deserialize_part(part_dict: dict) -> Part:
@@ -49,15 +58,12 @@ def _deserialize_part(part_dict: dict) -> Part:
 def get_or_create_active_session(user_id_full: str) -> str:
     """
     Obtiene la sesión activa de un usuario o crea una nueva si la anterior ha expirado (más de 24h).
-    No borra datos, solo crea una nueva referencia de sesión.
-    Devuelve el ID de la sesión que se debe usar.
     """
     user_id = _get_clean_user_id(user_id_full)
     if not user_id: return None
 
     session_doc_ref = db.collection(SESSION_COLLECTION).document(user_id)
     session_doc = session_doc_ref.get()
-    
     now = datetime.now(timezone.utc)
 
     if session_doc.exists:
@@ -78,13 +84,11 @@ def get_or_create_active_session(user_id_full: str) -> str:
         return new_session_id
 
 def save_chat_history(session_id: str, user_id_full: str, history: list, num_existing: int):
-    """Guarda los nuevos mensajes en el documento de la sesión activa, manejando todos los tipos de 'Part'."""
+    """Guarda los nuevos mensajes en el documento de la sesión activa."""
     if not session_id: return
     
     history_doc_ref = db.collection(HISTORY_COLLECTION).document(session_id)
     session_doc_ref = db.collection(SESSION_COLLECTION).document(_get_clean_user_id(user_id_full))
-    
-    # --- CORRECCIÓN 3: Usar datetime.now(timezone.utc) también aquí por consistencia ---
     now = datetime.now(timezone.utc)
     
     new_messages = history[num_existing:]
