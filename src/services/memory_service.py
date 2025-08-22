@@ -1,6 +1,6 @@
 from google.cloud import firestore
 from vertexai.generative_models import Content, Part, FunctionCall
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import uuid
 
 db = firestore.Client()
@@ -57,7 +57,8 @@ def get_or_create_active_session(user_id_full: str) -> str:
 
     session_doc_ref = db.collection(SESSION_COLLECTION).document(user_id)
     session_doc = session_doc_ref.get()
-    now = datetime.utcnow()
+    
+    now = datetime.now(timezone.utc)
 
     if session_doc.exists:
         session_data = session_doc.to_dict()
@@ -82,12 +83,13 @@ def save_chat_history(session_id: str, user_id_full: str, history: list, num_exi
     
     history_doc_ref = db.collection(HISTORY_COLLECTION).document(session_id)
     session_doc_ref = db.collection(SESSION_COLLECTION).document(_get_clean_user_id(user_id_full))
-    now = datetime.utcnow()
+    
+    # --- CORRECCIÓN 3: Usar datetime.now(timezone.utc) también aquí por consistencia ---
+    now = datetime.now(timezone.utc)
     
     new_messages = history[num_existing:]
     if not new_messages: return
 
-    # Convierte los mensajes a un formato serializable, usando la nueva función
     items_to_save = [
         {
             "role": item.role,
@@ -113,7 +115,6 @@ def get_chat_history(session_id: str) -> list:
     doc = doc_ref.get()
     if doc.exists:
         history_from_db = doc.to_dict().get("history", [])
-        # Reconstruye el historial usando la nueva función de deserialización
         reconstructed_history = []
         for item in history_from_db:
             parts = [_deserialize_part(p) for p in item.get("parts", []) if p]
