@@ -12,7 +12,7 @@ load_dotenv()
 IMAGEN_MODEL = os.getenv("IMAGEN_MODEL")
 GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")
 
-def visualizar_flujo_tiquete(ticket_id: str) -> str:
+def visualizar_flujo_tiquete(ticket_id: str, **kwargs) -> str:
     """
     Genera una infografía, la sube a Google Cloud Storage y devuelve la URL pública.
     """
