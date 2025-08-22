@@ -5,7 +5,11 @@ db = firestore.Client()
 HISTORY_COLLECTION = "chat_histories"
 
 def save_chat_history(user_id: str, history: list):
-    """Guarda el historial de una conversación en Firestore."""
+    """Guarda el historial de una conversación en Firestore, si el user_id es válido."""
+    if not user_id or "/" not in user_id:
+        print(f"ID de usuario inválido, no se guardará el historial: {user_id}")
+        return
+
     try:
         doc_ref = db.collection(HISTORY_COLLECTION).document(user_id)
         history_to_save = [
@@ -17,7 +21,11 @@ def save_chat_history(user_id: str, history: list):
         print(f"Error al guardar el historial para {user_id}: {e}")
 
 def get_chat_history(user_id: str) -> list:
-    """Recupera el historial de una conversación desde Firestore."""
+    """Recupera el historial de una conversación desde Firestore, si el user_id es válido."""
+    if not user_id or "/" not in user_id:
+        print(f"ID de usuario inválido, no se obtendrá el historial: {user_id}")
+        return []
+
     try:
         doc_ref = db.collection(HISTORY_COLLECTION).document(user_id)
         doc = doc_ref.get()
