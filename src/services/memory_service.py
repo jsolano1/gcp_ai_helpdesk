@@ -42,7 +42,8 @@ def _deserialize_part(part_dict: dict) -> Part:
     
     if part_type == "function_call":
         fc = FunctionCall(name=part_dict.get("name"), args=part_dict.get("args"))
-        return Part(function_call=fc)
+        # --- CORRECCIÓN CLAVE: Pasar el objeto directamente sin el nombre del argumento ---
+        return Part(fc)
     
     if part_type == "function_response":
         return Part.from_function_response(
