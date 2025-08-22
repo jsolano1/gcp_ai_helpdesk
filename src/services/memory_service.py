@@ -1,5 +1,5 @@
 from google.cloud import firestore
-from vertexai.generative_models import Content, Part
+from vertexai.generative_models import Content, Part, FunctionCall
 from datetime import datetime, timedelta
 import uuid
 
@@ -13,6 +13,39 @@ def _get_clean_user_id(user_id_full: str) -> str:
         return None
     return user_id_full.split('/')[-1]
 
+def _serialize_part(part: Part) -> dict:
+    """Convierte un objeto Part a un diccionario para guardarlo en Firestore."""
+    if part.text:
+        return {"type": "text", "content": part.text}
+    if part.function_call:
+        return {
+            "type": "function_call",
+            "name": part.function_call.name,
+            "args": dict(part.function_call.args)
+        }
+    if part.function_response:
+        return {
+            "type": "function_response",
+            "name": part.function_response.name,
+            "content": part.function_response.response
+        }
+    return {}
+
+def _deserialize_part(part_dict: dict) -> Part:
+    """Convierte un diccionario de Firestore de vuelta a un objeto Part."""
+    part_type = part_dict.get("type")
+    if part_type == "text":
+        return Part.from_text(part_dict.get("content", ""))
+    if part_type == "function_call":
+        return Part.from_function_call(
+            FunctionCall(name=part_dict.get("name"), args=part_dict.get("args"))
+        )
+    if part_type == "function_response":
+        return Part.from_function_response(
+            name=part_dict.get("name"), response=part_dict.get("content")
+        )
+    return None
+
 def get_or_create_active_session(user_id_full: str) -> str:
     """
     Obtiene la sesión activa de un usuario o crea una nueva si la anterior ha expirado (más de 24h).
@@ -24,7 +57,6 @@ def get_or_create_active_session(user_id_full: str) -> str:
 
     session_doc_ref = db.collection(SESSION_COLLECTION).document(user_id)
     session_doc = session_doc_ref.get()
-
     now = datetime.utcnow()
 
     if session_doc.exists:
@@ -34,25 +66,18 @@ def get_or_create_active_session(user_id_full: str) -> str:
         if last_activity and (now - last_activity > timedelta(hours=24)):
             print(f"▶️  La sesión para {user_id} ha expirado. Creando una nueva sesión.")
             new_session_id = str(uuid.uuid4())
-            session_doc_ref.set({
-                "active_session_id": new_session_id,
-                "last_activity": now,
-                "user_email": user_id_full  # Guardamos el email para referencia
-            })
+            session_doc_ref.set({"active_session_id": new_session_id, "last_activity": now})
             return new_session_id
         else:
             return session_data.get("active_session_id")
     else:
         print(f"▶️  Creando primera sesión para el usuario {user_id}.")
         new_session_id = str(uuid.uuid4())
-        session_doc_ref.set({
-            "active_session_id": new_session_id,
-            "last_activity": now
-        })
+        session_doc_ref.set({"active_session_id": new_session_id, "last_activity": now})
         return new_session_id
 
 def save_chat_history(session_id: str, user_id_full: str, history: list, num_existing: int):
-    """Guarda los nuevos mensajes en el documento de la sesión activa."""
+    """Guarda los nuevos mensajes en el documento de la sesión activa, manejando todos los tipos de 'Part'."""
     if not session_id: return
     
     history_doc_ref = db.collection(HISTORY_COLLECTION).document(session_id)
@@ -62,8 +87,13 @@ def save_chat_history(session_id: str, user_id_full: str, history: list, num_exi
     new_messages = history[num_existing:]
     if not new_messages: return
 
+    # Convierte los mensajes a un formato serializable, usando la nueva función
     items_to_save = [
-        {"role": item.role, "parts": [part.text for part in item.parts], "timestamp": now}
+        {
+            "role": item.role,
+            "parts": [_serialize_part(p) for p in item.parts if p],
+            "timestamp": now
+        }
         for item in new_messages
     ]
 
@@ -75,17 +105,19 @@ def save_chat_history(session_id: str, user_id_full: str, history: list, num_exi
     transaction = db.transaction()
     update_in_transaction(transaction, history_doc_ref, session_doc_ref)
 
-
 def get_chat_history(session_id: str) -> list:
-    """Recupera el historial de una sesión de chat específica."""
+    """Recupera y reconstruye el historial completo de una sesión."""
     if not session_id: return []
     
     doc_ref = db.collection(HISTORY_COLLECTION).document(session_id)
     doc = doc_ref.get()
     if doc.exists:
         history_from_db = doc.to_dict().get("history", [])
-        return [
-            Content(role=item["role"], parts=[Part.from_text(p) for p in item["parts"]])
-            for item in history_from_db
-        ]
+        # Reconstruye el historial usando la nueva función de deserialización
+        reconstructed_history = []
+        for item in history_from_db:
+            parts = [_deserialize_part(p) for p in item.get("parts", []) if p]
+            if parts:
+                reconstructed_history.append(Content(role=item["role"], parts=parts))
+        return reconstructed_history
     return []
