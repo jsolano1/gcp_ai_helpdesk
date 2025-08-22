@@ -1,5 +1,5 @@
 from google.cloud import firestore
-from vertexai.generative_models import Content, Part, FunctionCall
+from vertexai.generative_models import Content
 from datetime import datetime, timedelta, timezone
 import uuid
 
@@ -12,30 +12,6 @@ def _get_clean_user_id(user_id_full: str) -> str:
     if not user_id_full or "/" not in user_id_full:
         return None
     return user_id_full.split('/')[-1]
-
-def _serialize_part(part: Part) -> dict:
-    """
-    Convierte un objeto Part a una estructura de diccionario simple que puede ser
-    reconstruida directamente por las funciones de la librería.
-    """
-    if part.function_call:
-        return {
-            "function_call": {
-                "name": part.function_call.name,
-                "args": {key: value for key, value in part.function_call.args.items()}
-            }
-        }
-    if part.function_response:
-        return {
-            "function_response": {
-                "name": part.function_response.name,
-                "response": {key: value for key, value in part.function_response.response.items()}
-            }
-        }
-    if hasattr(part, 'text'):
-        return {"text": part.text}
-    
-    return {}
 
 def get_or_create_active_session(user_id_full: str) -> str:
     """
@@ -76,14 +52,12 @@ def save_chat_history(session_id: str, user_id_full: str, history: list, num_exi
     new_messages = history[num_existing:]
     if not new_messages: return
 
-    items_to_save = [
-        {
-            "role": item.role,
-            "parts": [_serialize_part(p) for p in item.parts if p],
-            "timestamp": now
-        }
-        for item in new_messages
-    ]
+    # Convierte los objetos Content a diccionarios usando el método oficial de la librería
+    items_to_save = [msg.to_dict() for msg in new_messages]
+    
+    # Añade nuestro timestamp a cada item guardado
+    for item in items_to_save:
+        item['timestamp'] = now
 
     @firestore.transactional
     def update_in_transaction(transaction, history_ref, session_ref):
@@ -105,18 +79,8 @@ def get_chat_history(session_id: str) -> list:
         return []
 
     history_from_db = doc.to_dict().get("history", [])
-    reconstructed_history = []
-    for item in history_from_db:
-        # Prepara el diccionario para ser leído por Content.from_dict
-        content_dict = {
-            "role": item.get("role"),
-            "parts": item.get("parts", [])
-        }
-        # Filtra cualquier parte vacía que se haya podido guardar por error
-        content_dict["parts"] = [p for p in content_dict["parts"] if p]
-        
-        if content_dict["parts"]:
-            # Usa el método oficial de la librería para reconstruir el objeto
-            reconstructed_history.append(Content.from_dict(content_dict))
+    
+    # Reconstruye la lista de objetos Content usando el método oficial de la librería
+    reconstructed_history = [Content.from_dict(item) for item in history_from_db]
             
     return reconstructed_history
