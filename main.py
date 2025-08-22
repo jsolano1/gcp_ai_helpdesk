@@ -10,7 +10,6 @@ def handle_chat_event():
     event_data = request.get_json(silent=True) or {}
     
     try:
-        # Un bot estándar envía un JSON con la clave 'type' en el nivel superior
         if event_data.get('type') == 'MESSAGE':
             from src.logic import handle_dex_logic
             
@@ -20,13 +19,14 @@ def handle_chat_event():
             final_text_reply = handle_dex_logic(
                 user_message=user_message,
                 user_email=user_info.get("email"),
-                user_display_name=user_info.get("displayName")
+                user_display_name=user_info.get("displayName"),
+                user_id=user_info.get("name") 
             )
             
             return jsonify({"text": final_text_reply})
         
         elif event_data.get('type') == 'ADDED_TO_SPACE':
-            return jsonify({"text": "¡Gracias por añadirme! Soy Dex, tu asistente de Helpdesk."})
+            return jsonify({"text": "¡Gracias por añadirme! Soy ConnectAI, tu asistente de Helpdesk."})
 
         return jsonify({})
 

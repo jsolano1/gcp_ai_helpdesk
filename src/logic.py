@@ -5,16 +5,19 @@ from dotenv import load_dotenv
 import vertexai
 from vertexai.generative_models import GenerativeModel, Part
 
+# --- CONFIGURACIÓN ---
 load_dotenv()
-
 GEMINI_CHAT_MODEL = os.getenv("GEMINI_CHAT_MODEL")
 from src.config import GCP_PROJECT_ID, LOCATION
 from src.services import ticket_manager, ticket_querier, ticket_visualizer
 from src.tools.tool_definitions import all_tools_config
+from src.services.memory_service import get_chat_history, save_chat_history
 
+# --- INICIALIZACIÓN DIFERIDA (LAZY INITIALIZATION) ---
 model = None
 initialized = False
 
+# --- PROMPT Y PERSONALIDAD ---
 system_prompt = """
 Eres 'Bladi', un asistente de Helpdesk virtual experto en todo lo referente a IT manager. Tu motor es Gemini 2.5 flash. Tu misión es entender la solicitud del usuario, determinar su prioridad, y ayudarlo a gestionar tiquetes de soporte de manera eficiente y amigable para el equipo correcto con el sla que cumple con la solicitud.
 **## Reglas Clave ##**
@@ -46,27 +49,31 @@ available_tools = {
 }
 
 def initialize_ai():
-    """Inicializa el cliente de Vertex AI de forma segura."""
+    """Inicializa el modelo de IA de forma segura, solo una vez."""
     global model, initialized
     if not initialized:
-        print(json.dumps({"log_name": "InitializeAI", "mensaje": "Inicializando modelo de IA."}))
         vertexai.init(project=GCP_PROJECT_ID, location=LOCATION)
         model = GenerativeModel(GEMINI_CHAT_MODEL, system_instruction=system_prompt, tools=[all_tools_config])
         initialized = True
 
-def handle_dex_logic(user_message: str, user_email: str, user_display_name: str) -> str:
+def handle_dex_logic(user_message: str, user_email: str, user_display_name: str, user_id: str) -> str:
     """
-    Maneja la lógica completa, procesa respuestas de múltiples partes y personaliza la conversación.
+    Maneja la lógica de la conversación usando Firestore para la memoria.
     """
     try:
         initialize_ai()
         
-        primer_nombre = user_display_name.split(" ")[0]
-        mensaje_personalizado = f"Hola {primer_nombre}, soy Dex. {user_message}"
-
-        chat = model.start_chat()
-        response = chat.send_message(mensaje_personalizado)
+        # 1. Recupera el historial de la conversación desde Firestore.
+        history = get_chat_history(user_id)
         
+        # 2. Inicia el chat CON el historial previo para tener contexto.
+        chat = model.start_chat(history=history)
+        
+        # Enriquece el mensaje con el nombre para que la IA lo use.
+        mensaje_con_contexto = f"[Mi nombre es {user_display_name.split(' ')[0]}] {user_message}"
+        response = chat.send_message(mensaje_con_contexto)
+        
+        # Bucle para buscar y manejar llamadas a funciones (herramientas).
         function_call = None
         for part in response.candidates[0].content.parts:
             if part.function_call and part.function_call.name:
@@ -76,7 +83,6 @@ def handle_dex_logic(user_message: str, user_email: str, user_display_name: str)
         if function_call:
             tool_name = function_call.name
             tool_to_call = available_tools.get(tool_name)
-            
             if not tool_to_call: raise ValueError(f"Herramienta desconocida: {tool_name}")
 
             tool_args = {key: value for key, value in function_call.args.items()}
@@ -93,6 +99,9 @@ def handle_dex_logic(user_message: str, user_email: str, user_display_name: str)
             final_text = final_response.text
         else:
             final_text = response.text
+        
+        # 3. Guarda el historial actualizado en Firestore para la próxima interacción.
+        save_chat_history(user_id, chat.history)
 
         return final_text
 
