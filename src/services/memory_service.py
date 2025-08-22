@@ -15,41 +15,27 @@ def _get_clean_user_id(user_id_full: str) -> str:
 
 def _serialize_part(part: Part) -> dict:
     """
-    Convierte un objeto Part a un diccionario para guardarlo en Firestore.
+    Convierte un objeto Part a una estructura de diccionario simple que puede ser
+    reconstruida directamente por las funciones de la librería.
     """
     if part.function_call:
         return {
-            "type": "function_call",
-            "name": part.function_call.name,
-            "args": {key: value for key, value in part.function_call.args.items()}
+            "function_call": {
+                "name": part.function_call.name,
+                "args": {key: value for key, value in part.function_call.args.items()}
+            }
         }
     if part.function_response:
         return {
-            "type": "function_response",
-            "name": part.function_response.name,
-            "content": {key: value for key, value in part.function_response.response.items()}
+            "function_response": {
+                "name": part.function_response.name,
+                "response": {key: value for key, value in part.function_response.response.items()}
+            }
         }
     if hasattr(part, 'text'):
-        return {"type": "text", "content": part.text}
+        return {"text": part.text}
     
     return {}
-
-def _deserialize_part(part_dict: dict) -> Part:
-    """Convierte un diccionario de Firestore de vuelta a un objeto Part."""
-    part_type = part_dict.get("type")
-    if part_type == "text":
-        return Part.from_text(part_dict.get("content", ""))
-    
-    if part_type == "function_call":
-        fc = FunctionCall(name=part_dict.get("name"), args=part_dict.get("args"))
-        # --- ESTA ES LA LÍNEA CORREGIDA ---
-        return Part(fc)
-    
-    if part_type == "function_response":
-        return Part.from_function_response(
-            name=part_dict.get("name"), response=part_dict.get("content")
-        )
-    return None
 
 def get_or_create_active_session(user_id_full: str) -> str:
     """
@@ -108,17 +94,29 @@ def save_chat_history(session_id: str, user_id_full: str, history: list, num_exi
     update_in_transaction(transaction, history_doc_ref, session_doc_ref)
 
 def get_chat_history(session_id: str) -> list:
-    """Recupera y reconstruye el historial completo de una sesión."""
+    """
+    Recupera y reconstruye el historial completo de una sesión usando Content.from_dict.
+    """
     if not session_id: return []
     
     doc_ref = db.collection(HISTORY_COLLECTION).document(session_id)
     doc = doc_ref.get()
-    if doc.exists:
-        history_from_db = doc.to_dict().get("history", [])
-        reconstructed_history = []
-        for item in history_from_db:
-            parts = [_deserialize_part(p) for p in item.get("parts", []) if p]
-            if parts:
-                reconstructed_history.append(Content(role=item["role"], parts=parts))
-        return reconstructed_history
-    return []
+    if not doc.exists:
+        return []
+
+    history_from_db = doc.to_dict().get("history", [])
+    reconstructed_history = []
+    for item in history_from_db:
+        # Prepara el diccionario para ser leído por Content.from_dict
+        content_dict = {
+            "role": item.get("role"),
+            "parts": item.get("parts", [])
+        }
+        # Filtra cualquier parte vacía que se haya podido guardar por error
+        content_dict["parts"] = [p for p in content_dict["parts"] if p]
+        
+        if content_dict["parts"]:
+            # Usa el método oficial de la librería para reconstruir el objeto
+            reconstructed_history.append(Content.from_dict(content_dict))
+            
+    return reconstructed_history
