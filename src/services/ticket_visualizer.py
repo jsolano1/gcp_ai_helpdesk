@@ -14,15 +14,16 @@ GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")
 
 def visualizar_flujo_tiquete(ticket_id: str, **kwargs) -> str:
     """
-    Genera una infografía, la sube a Google Cloud Storage y devuelve la URL pública.
+    Genera una infografía, la sube a Google Cloud Storage y devuelve un objeto JSON 
+    estructurado con la URL pública y el ID del tiquete.
     """
     if not GCS_BUCKET_NAME:
-        return "Error de configuración: La variable de entorno GCS_BUCKET_NAME no está definida."
+        return json.dumps({"error": "Error de configuración: La variable de entorno GCS_BUCKET_NAME no está definida."})
 
     ticket_id = ticket_id.upper()
     id_normalizado, existe = validar_tiquete(ticket_id)
     if not existe:
-        return f"Error: El tiquete '{id_normalizado}' no fue encontrado."
+        return json.dumps({"error": f"Error: El tiquete '{id_normalizado}' no fue encontrado."})
 
     query = f"""
         SELECT TipoEvento, FechaEvento, Detalles, Autor
@@ -40,7 +41,7 @@ def visualizar_flujo_tiquete(ticket_id: str, **kwargs) -> str:
         eventos = list(client.query(query, job_config=job_config).result())
         
         if not eventos:
-            return f"No se encontró historial para el tiquete con ID '{ticket_id}'."
+            return json.dumps({"error": f"No se encontró historial para el tiquete con ID '{ticket_id}'."})
         
         prompt_para_imagen = (
             f"Crea una infografía de una **línea de tiempo horizontal** para el tiquete de soporte '{ticket_id}'. "
@@ -89,8 +90,15 @@ def visualizar_flujo_tiquete(ticket_id: str, **kwargs) -> str:
         blob.upload_from_string(image_bytes, content_type="image/png")
         
         print(f"✅ Imagen disponible en: {blob.public_url}")
-        return f"He generado una línea de tiempo visual para el tiquete {ticket_id}. Puedes verla aquí: {blob.public_url}"
+        
+        # Devuelve un JSON estructurado para ser procesado por la lógica del bot
+        response_data = {
+            "type": "image_flow",
+            "imageUrl": blob.public_url,
+            "ticketId": ticket_id
+        }
+        return json.dumps(response_data)
 
     except Exception as e:
         print(f"🔴 Error al visualizar el flujo: {e}")
-        return f"Ocurrió un error al intentar generar el diagrama del tiquete: {e}"
+        return json.dumps({"error": f"Ocurrió un error al intentar generar el diagrama del tiquete: {e}"})

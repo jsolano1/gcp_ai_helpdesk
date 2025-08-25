@@ -11,7 +11,6 @@ from src.config import GCP_PROJECT_ID, LOCATION
 from src.services import ticket_manager, ticket_querier, ticket_visualizer
 from src.tools.tool_definitions import all_tools_config
 from src.services.memory_service import get_chat_history, save_chat_history, get_or_create_active_session
-
 from src.utils.bigquery_client import obtener_rol_usuario
 
 model = None
@@ -67,22 +66,19 @@ def tiene_permiso(rol: str, herramienta: str) -> bool:
         return True
     return herramienta in permisos.get(rol, [])
 
-def handle_dex_logic(user_message: str, user_email: str, user_display_name: str, user_id: str) -> str:
+def handle_dex_logic(user_message: str, user_email: str, user_display_name: str, user_id: str):
     """
-    Maneja la lógica de la conversación usando un sistema de sesiones activas.
+    Maneja la lógica de la conversación. Puede devolver un string (texto) o un dict (tarjeta).
     """
     try:
         initialize_ai()
         
-        # 1. OBTENER O CREAR LA SESIÓN ACTIVA
-        # Esta es la nueva puerta de entrada. Determina qué conversación usar.
         session_id = get_or_create_active_session(user_id)
         if not session_id:
             return "Lo siento, no pude iniciar una sesión de chat para ti."
 
         user_role, user_department = obtener_rol_usuario(user_email)
         
-        # 2. Las demás funciones ahora usan el session_id
         history = get_chat_history(session_id)
         num_initial_messages = len(history)
         
@@ -121,6 +117,40 @@ def handle_dex_logic(user_message: str, user_email: str, user_display_name: str,
 
             tool_response_text = tool_to_call(**tool_args)
             
+            # --- INTERCEPTOR PARA LA VISUALIZACIÓN DE FLUJO ---
+            if tool_name == "visualizar_flujo_tiquete":
+                try:
+                    data = json.loads(tool_response_text)
+                    if "error" in data:
+                        # Si la herramienta devolvió un error, lo mostramos como texto
+                        return data["error"]
+                    
+                    # Si todo fue exitoso, construimos y devolvemos la tarjeta de Chat
+                    card = {
+                        "cardsV2": [{
+                            "cardId": f"flow_card_{data['ticketId']}",
+                            "card": {
+                                "header": {
+                                    "title": f"Línea de Tiempo del Tiquete {data['ticketId']}",
+                                    "subtitle": "Aquí tienes el historial visual de tu solicitud.",
+                                    "imageUrl": "https://i.ibb.co/L1J50f1/timeline-icon.png", # Un ícono genérico para el encabezado
+                                    "imageType": "CIRCLE"
+                                },
+                                "sections": [{
+                                    "widgets": [{
+                                        "image": { "imageUrl": data['imageUrl'] }
+                                    }]
+                                }]
+                            }
+                        }]
+                    }
+                    # Devolver el diccionario de la tarjeta directamente. La ejecución termina aquí para este caso.
+                    return card
+                except (json.JSONDecodeError, KeyError) as e:
+                    print(f"🔴 Error al procesar la respuesta de la imagen: {e}")
+                    return "Hubo un error inesperado al procesar la visualización del tiquete."
+            
+            # --- FLUJO NORMAL PARA TODAS LAS DEMÁS HERRAMIENTAS ---
             final_response = chat.send_message(
                 Part.from_function_response(name=tool_name, response={"content": tool_response_text})
             )
@@ -128,7 +158,6 @@ def handle_dex_logic(user_message: str, user_email: str, user_display_name: str,
         else:
             final_text = response.text
         
-        # 3. Guardar el historial en la sesión activa
         save_chat_history(session_id, user_id, chat.history, num_initial_messages)
         return final_text
 

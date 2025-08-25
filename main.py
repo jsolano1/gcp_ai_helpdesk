@@ -18,14 +18,25 @@ def handle_chat_event():
             user_message = event_data.get('message', {}).get('text', '').strip()
             user_info = event_data.get('user', {})
             
-            final_text_reply = handle_dex_logic(
+            # La respuesta de la lógica puede ser un string o un dict (tarjeta)
+            response_data = handle_dex_logic(
                 user_message=user_message,
                 user_email=user_info.get("email"),
                 user_display_name=user_info.get("displayName"),
                 user_id=user_info.get("name") 
             )
-            return jsonify({"text": final_text_reply})
-        
+            
+            # Determinar el tipo de respuesta a enviar
+            if isinstance(response_data, str):
+                # Si es un string, es una respuesta de texto normal
+                return jsonify({"text": response_data})
+            elif isinstance(response_data, dict):
+                # Si es un diccionario, es una tarjeta y la enviamos directamente
+                return jsonify(response_data)
+            else:
+                # Fallback por si acaso
+                return jsonify({"text": "No se pudo procesar la respuesta."})
+
         elif event_data.get('type') == 'ADDED_TO_SPACE':
             return jsonify({"text": "¡Gracias por añadirme! Soy ConnectAI, tu asistente de Helpdesk."})
 
@@ -35,7 +46,7 @@ def handle_chat_event():
         print(json.dumps({"log_name": "HandleChatEvent_Error", "error": str(e), "traceback": traceback.format_exc()}))
         return jsonify({"text": "Ocurrió un error inesperado."})
 
-# --- RUTA 2: RUTA NUEVA Y SECRETA PARA CLOUD SCHEDULER ---
+# --- RUTA 2: RUTA PARA CLOUD SCHEDULER ---
 @app.route("/run-summary", methods=["POST"])
 def handle_summary_trigger():
     print("🚀 Tarea de resumen diario iniciada por Cloud Scheduler.")
