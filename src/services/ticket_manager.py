@@ -10,6 +10,7 @@ from src.config import DATA_ENGINEERING_LEAD, BI_ANALYST_LEAD
 from src.services.ticket_querier import consultar_estado_tiquete
 from src.services.notification_service import enviar_notificacion_email, enviar_notificacion_chat
 from urllib.parse import urlencode
+from src.services.asana_service import crear_tarea_asana 
 
 
 def crear_tiquete(descripcion: str, equipo_asignado: str, prioridad: str, solicitante: str, nombre_solicitante: str, **kwargs) -> str:
@@ -171,8 +172,14 @@ def convertir_incidencia_a_tarea(ticket_id: str, motivo: str, fecha_entrega: str
     try:
         # 1. Obtener el estado actual para saber a quién está asignado
         estado_actual = consultar_estado_tiquete(id_normalizado)
-        # Suponemos que el estado contiene "asignado a email@dominio.com"
-        responsable_actual = estado_actual.split(" a ")[-1].replace(".", "")
+        
+        # Extraer el email del responsable del texto de estado
+        responsable_actual = ""
+        if "asignado a " in estado_actual:
+            responsable_actual = estado_actual.split(" a ")[-1].strip().replace('.','')
+
+        if not responsable_actual:
+            return "Error: No se pudo determinar el responsable actual del tiquete para asignarlo en Asana."
 
         # 2. Crear la tarea en Asana
         nombre_tarea = f"Tarea [Desde Tiquete {id_normalizado}]"
@@ -223,12 +230,9 @@ def agendar_reunion_gcalendar(ticket_id: str, email_invitados: list, **kwargs) -
         "crm": "BUSY"
     }
 
-    # urlencode se encarga de formatear los parámetros correctamente para la URL
     base_url = "https://calendar.google.com/calendar/render?"
     url_final = base_url + urlencode(params, doseq=True)
     
-    # Devolvemos un JSON para que la lógica lo pueda interpretar si es necesario,
-    # o un texto simple que el LLM pueda usar.
     respuesta_texto = f"¡Claro! He generado un enlace para que puedan agendar la reunión fácilmente. Solo haz clic y busca un horario disponible para todos: {url_final}"
     
     return respuesta_texto
