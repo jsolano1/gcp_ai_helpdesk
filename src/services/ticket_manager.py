@@ -9,6 +9,7 @@ from src.utils.bigquery_client import (
 from src.config import DATA_ENGINEERING_LEAD, BI_ANALYST_LEAD
 from src.services.ticket_querier import consultar_estado_tiquete
 from src.services.notification_service import enviar_notificacion_email, enviar_notificacion_chat
+from urllib.parse import urlencode
 
 
 def crear_tiquete(descripcion: str, equipo_asignado: str, prioridad: str, solicitante: str, nombre_solicitante: str, **kwargs) -> str:
@@ -159,3 +160,75 @@ def modificar_sla_manual(ticket_id: str, nuevas_horas_sla: int, solicitante_emai
     except Exception as e:
         print(f"🔴 Error al modificar el SLA: {e}")
         return f"Ocurrió un error al intentar modificar el SLA del tiquete: {e}"
+
+def convertir_incidencia_a_tarea(ticket_id: str, motivo: str, fecha_entrega: str, solicitante_email: str, **kwargs) -> str:
+    """
+    Convierte una incidencia existente en una tarea de Asana y lo registra en BigQuery.
+    """
+    id_normalizado, existe = validar_tiquete(ticket_id.upper())
+    if not existe: return f"Error: El tiquete '{id_normalizado}' no fue encontrado."
+
+    try:
+        # 1. Obtener el estado actual para saber a quién está asignado
+        estado_actual = consultar_estado_tiquete(id_normalizado)
+        # Suponemos que el estado contiene "asignado a email@dominio.com"
+        responsable_actual = estado_actual.split(" a ")[-1].replace(".", "")
+
+        # 2. Crear la tarea en Asana
+        nombre_tarea = f"Tarea [Desde Tiquete {id_normalizado}]"
+        notas_tarea = f"Esta tarea fue convertida desde una incidencia.\n\nMotivo: {motivo}\nSolicitante: {solicitante_email}"
+        
+        resultado_asana = crear_tarea_asana(
+            nombre_tarea=nombre_tarea,
+            notas=notas_tarea,
+            responsable_email=responsable_actual,
+            fecha_entrega=fecha_entrega
+        )
+
+        if "error" in resultado_asana:
+            return f"No se pudo crear la tarea en Asana: {resultado_asana['error']}"
+
+        # 3. Registrar el evento en BigQuery
+        detalles_conversion = {
+            "motivo": motivo,
+            "convertido_por": solicitante_email,
+            "asana_task_info": resultado_asana
+        }
+        registrar_evento(id_normalizado, "CONVERTIDO_A_TAREA", solicitante_email, detalles_conversion)
+        
+        mensaje_chat = f"🔄 Tiquete *{id_normalizado}* convertido a Tarea en Asana.\nAsignado a: *{responsable_actual}*\nURL: {resultado_asana['asana_task_url']}"
+        enviar_notificacion_chat(mensaje_chat)
+        
+        return f"Tiquete {id_normalizado} convertido exitosamente a una tarea en Asana. Se ha notificado al canal."
+
+    except Exception as e:
+        print(f"🔴 Error al convertir tiquete a tarea: {e}")
+        return f"Ocurrió un error inesperado durante la conversión: {e}"
+
+def agendar_reunion_gcalendar(ticket_id: str, email_invitados: list, **kwargs) -> str:
+    """
+    Construye y devuelve un enlace de Google Calendar con los detalles pre-rellenados.
+    """
+    titulo = f"Reunión de seguimiento para Tarea (desde Tiquete {ticket_id})"
+    detalles = (
+        f"Reunión para discutir los requerimientos y próximos pasos de la tarea generada a partir del tiquete {ticket_id}.\n\n"
+        "Por favor, utiliza la función 'Buscar un horario' para encontrar el mejor momento para todos."
+    )
+
+    params = {
+        "action": "TEMPLATE",
+        "text": titulo,
+        "details": detalles,
+        "add": email_invitados, 
+        "crm": "BUSY"
+    }
+
+    # urlencode se encarga de formatear los parámetros correctamente para la URL
+    base_url = "https://calendar.google.com/calendar/render?"
+    url_final = base_url + urlencode(params, doseq=True)
+    
+    # Devolvemos un JSON para que la lógica lo pueda interpretar si es necesario,
+    # o un texto simple que el LLM pueda usar.
+    respuesta_texto = f"¡Claro! He generado un enlace para que puedan agendar la reunión fácilmente. Solo haz clic y busca un horario disponible para todos: {url_final}"
+    
+    return respuesta_texto

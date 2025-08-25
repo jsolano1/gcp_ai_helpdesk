@@ -33,6 +33,8 @@ Eres 'Bladi', un asistente de Helpdesk virtual experto en todo lo referente a IT
 **## Habilidades ##**
 - **Análisis de Métricas:** Si preguntan por estadísticas, usa `consultar_metricas`.
 - **Visualizar Flujo:** Si piden un 'historial' o 'diagrama', usa `visualizar_flujo_tiquete`.
+- **Convertir a Tarea:** Si una incidencia es una nueva funcionalidad, usa `convertir_incidencia_a_tarea` para crearla en Asana.
+- **Agendar Reuniones:** **IMPORTANTE:** Después de convertir una incidencia a una tarea de Asana, SIEMPRE pregunta proactivamente al usuario si desea "agendar una reunión de seguimiento". Si dice que sí, usa la herramienta `agendar_reunion_gcalendar` para generar el enlace. Para ello, necesitarás el ID del tiquete y los correos del solicitante y del responsable.
 - **Y el resto de tus habilidades...**
 """
 
@@ -43,7 +45,9 @@ available_tools = {
     "reasignar_tiquete": ticket_manager.reasignar_tiquete,
     "modificar_sla_manual": ticket_manager.modificar_sla_manual,
     "visualizar_flujo_tiquete": ticket_visualizer.visualizar_flujo_tiquete,
-    "consultar_metricas": ticket_querier.consultar_metricas
+    "consultar_metricas": ticket_querier.consultar_metricas,
+    "convertir_incidencia_a_tarea": ticket_manager.convertir_incidencia_a_tarea,
+    "agendar_reunion_gcalendar": ticket_manager.agendar_reunion_gcalendar
 }
 
 def initialize_ai():
