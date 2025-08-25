@@ -91,7 +91,6 @@ def handle_dex_logic(user_message: str, user_email: str, user_display_name: str,
         mensaje_con_contexto = f"[Mi nombre es {user_display_name.split(' ')[0]}] {user_message}"
         response = chat.send_message(mensaje_con_contexto)
         
-        # ... (el resto de la lógica de tool calling es exactamente la misma)
         function_call = None
         for part in response.candidates[0].content.parts:
             if part.function_call and part.function_call.name:
