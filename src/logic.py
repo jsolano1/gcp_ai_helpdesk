@@ -12,6 +12,7 @@ from src.services import ticket_manager, ticket_querier, ticket_visualizer
 from src.tools.tool_definitions import all_tools_config
 from src.services.memory_service import get_chat_history, save_chat_history, get_or_create_active_session
 from src.utils.bigquery_client import obtener_rol_usuario
+from src.services.knowledge_service import search_knowledge_base
 
 model = None
 initialized = False
@@ -72,7 +73,7 @@ def tiene_permiso(rol: str, herramienta: str) -> bool:
 
 def handle_dex_logic(user_message: str, user_email: str, user_display_name: str, user_id: str):
     """
-    Maneja la lógica de la conversación. Puede devolver un string (texto) o un dict (tarjeta).
+    Maneja la lógica de la conversación, ahora con búsqueda previa en la base de conocimiento.
     """
     try:
         initialize_ai()
