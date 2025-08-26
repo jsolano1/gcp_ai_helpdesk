@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timedelta
 from google.cloud import bigquery
 from src.utils.bigquery_client import (
-    client, registrar_evento, TICKETS_TABLE_ID, validar_tiquete, 
+    client, registrar_evento, TICKETS_TABLE_ID, validar_tiquete,
     obtener_departamento_tiquete, obtener_sla_por_configuracion,
     obtener_participantes_tiquete
 )
@@ -75,7 +75,7 @@ def crear_tiquete(descripcion: str, equipo_asignado: str, prioridad: str, solici
 
 
 def cerrar_tiquete(ticket_id: str, resolucion: str, solicitante_email: str, solicitante_rol: str, solicitante_departamento: str, **kwargs) -> str:
-    """Cierra un tiquete con validación de departamento para roles 'lead' y 'agent'."""
+    """Cierra un tiquete y notifica a todas las partes involucradas."""
     id_normalizado, existe = validar_tiquete(ticket_id.upper())
     if not existe: return f"Error: El tiquete '{id_normalizado}' no fue encontrado."
 
@@ -85,23 +85,36 @@ def cerrar_tiquete(ticket_id: str, resolucion: str, solicitante_email: str, soli
             return f"Error: No se pudo determinar el departamento del tiquete {id_normalizado}."
         if departamento_tiquete != solicitante_departamento:
             return f"Acción denegada. Tu rol solo permite gestionar tiquetes del departamento '{solicitante_departamento}'."
-
     if solicitante_rol == 'agent':
         estado_actual = consultar_estado_tiquete(id_normalizado)
         if solicitante_email not in estado_actual:
              return f"Acción denegada. Como 'agent', solo puedes cerrar tiquetes asignados a ti."
 
     try:
+        participantes = obtener_participantes_tiquete(id_normalizado)
+        email_solicitante_original = participantes.get("solicitante")
+        email_responsable_actual = participantes.get("responsable")
+
         detalles_cierre = {"resolucion": resolucion, "cerrado_por": solicitante_email}
         registrar_evento(id_normalizado, "CERRADO", solicitante_email, detalles_cierre)
+        
         enviar_notificacion_chat(f"✔️ Tiquete Cerrado: *{id_normalizado}*\n*Resolución:* {resolucion}")
-        return f"El tiquete {id_normalizado} ha sido marcado como cerrado."
+        
+        asunto = f"✔️ Tiquete Resuelto: {id_normalizado}"
+        cuerpo_html = f"<html><body><h2>Hola,</h2><p>El tiquete <b>{id_normalizado}</b> ha sido cerrado.</p><p><b>Nota de resolución:</b> {resolucion}</p><p>Gracias,<br>Dex Helpdesk AI</p></body></html>"
+        
+        if email_solicitante_original:
+            enviar_notificacion_email(email_solicitante_original, asunto, cuerpo_html)
+        if email_responsable_actual and email_responsable_actual != email_solicitante_original:
+            enviar_notificacion_email(email_responsable_actual, asunto, cuerpo_html)
+
+        return f"El tiquete {id_normalizado} ha sido marcado como cerrado y se ha notificado a los involucrados."
     except Exception as e:
         print(f"🔴 Error al cerrar tiquete: {e}")
         return f"Ocurrió un error al cerrar el tiquete: {e}"
 
 def reasignar_tiquete(ticket_id: str, nuevo_responsable_email: str, solicitante_email: str, solicitante_rol: str, solicitante_departamento: str, **kwargs) -> str:
-    """Reasigna un tiquete con validación de departamento para el rol 'lead'."""
+    """Reasigna un tiquete y notifica al nuevo responsable."""
     id_normalizado, existe = validar_tiquete(ticket_id.upper())
     if not existe: return f"Error: El tiquete '{id_normalizado}' no fue encontrado."
 
@@ -113,11 +126,18 @@ def reasignar_tiquete(ticket_id: str, nuevo_responsable_email: str, solicitante_
             return f"Acción denegada. Como 'lead', solo puedes reasignar tiquetes de tu departamento ('{solicitante_departamento}')."
     
     try:
-        current_status = consultar_estado_tiquete(id_normalizado)
-        detalles = {"nuevo_responsable": nuevo_responsable_email, "estado_anterior": current_status, "reasignado_por": solicitante_email}
+        estado_anterior = consultar_estado_tiquete(id_normalizado)
+        
+        detalles = {"nuevo_responsable": nuevo_responsable_email, "estado_anterior": estado_anterior, "reasignado_por": solicitante_email}
         registrar_evento(id_normalizado, "REASIGNADO", solicitante_email, detalles)
+        
         enviar_notificacion_chat(f"👤 Tiquete Reasignado: *{id_normalizado}*\n*Nuevo Responsable:* {nuevo_responsable_email}")
-        return f"El tiquete {id_normalizado} ha sido reasignado a {nuevo_responsable_email}."
+        
+        asunto = f"⚠️ Tiquete Reasignado a ti: {id_normalizado}"
+        cuerpo_html = f"<html><body><h2>Hola,</h2><p>El tiquete <b>{id_normalizado}</b> te ha sido reasignado.</p><p>Por favor, revisa los detalles en el sistema.</p><p>Gracias,<br>Dex Helpdesk AI</p></body></html>"
+        enviar_notificacion_email(nuevo_responsable_email, asunto, cuerpo_html)
+
+        return f"El tiquete {id_normalizado} ha sido reasignado a {nuevo_responsable_email} y se le ha notificado."
     except Exception as e:
         print(f"🔴 Error al reasignar tiquete: {e}")
         return f"Ocurrió un error al reasignar el tiquete: {e}"
