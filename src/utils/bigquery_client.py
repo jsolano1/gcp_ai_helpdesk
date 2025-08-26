@@ -152,26 +152,38 @@ def obtener_sla_por_configuracion(departamento: str, prioridad: str) -> int:
 def obtener_participantes_tiquete(ticket_id: str) -> dict:
     """
     Obtiene el correo del solicitante y del responsable actual de un tiquete.
+    Esta versión es más robusta y busca el último responsable válido.
     """
     id_normalizado = ticket_id.upper()
     query = f"""
-    WITH UltimoResponsable AS (
+    WITH EventosConResponsable AS (
+        -- Seleccionamos todos los eventos que definen un responsable
         SELECT
             TicketID,
+            FechaEvento,
             COALESCE(
                 JSON_EXTRACT_SCALAR(Detalles, '$.nuevo_responsable'),
                 JSON_EXTRACT_SCALAR(Detalles, '$.responsable_inicial')
             ) as Responsable
         FROM `{EVENTOS_TABLE_ID}`
-        WHERE TicketID = @ticket_id
+        WHERE 
+            TicketID = @ticket_id 
+            AND (
+                JSON_EXTRACT_SCALAR(Detalles, '$.nuevo_responsable') IS NOT NULL 
+                OR JSON_EXTRACT_SCALAR(Detalles, '$.responsable_inicial') IS NOT NULL
+            )
+    ),
+    UltimoResponsable AS (
+        -- De esos eventos, nos quedamos solo con el más reciente
+        SELECT Responsable
+        FROM EventosConResponsable
         ORDER BY FechaEvento DESC
         LIMIT 1
     )
     SELECT
         t.Solicitante,
-        ur.Responsable
+        (SELECT Responsable FROM UltimoResponsable) AS Responsable
     FROM `{TICKETS_TABLE_ID}` t
-    LEFT JOIN UltimoResponsable ur ON t.TicketID = ur.TicketID
     WHERE t.TicketID = @ticket_id
     """
     job_config = bigquery.QueryJobConfig(

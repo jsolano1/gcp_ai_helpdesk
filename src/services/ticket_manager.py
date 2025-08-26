@@ -217,12 +217,13 @@ def convertir_incidencia_a_tarea(ticket_id: str, motivo: str, fecha_entrega: str
 def agendar_reunion_gcalendar(ticket_id: str, email_invitados_adicionales: list = None, **kwargs) -> str:
     """
     Construye y devuelve un objeto JSON para una tarjeta de Google Chat con un enlace
-    de Google Calendar que abre directamente en la vista para buscar horarios.
+    de Google Calendar optimizado para la vista "Find a time".
     """
     # 1. Obtener automáticamente al solicitante y responsable
     participantes = obtener_participantes_tiquete(ticket_id)
-    if "error" in participantes:
-        return json.dumps({"error": f"No pude encontrar a los participantes del tiquete: {participantes['error']}"})
+    if "error" in participantes or not participantes.get("solicitante") or not participantes.get("responsable"):
+        error_msg = participantes.get("error", "No se pudo determinar al solicitante o responsable.")
+        return json.dumps({"error": f"No pude encontrar a los participantes: {error_msg}"})
     
     invitados = {participantes.get("solicitante"), participantes.get("responsable")}
     if email_invitados_adicionales:
@@ -230,24 +231,22 @@ def agendar_reunion_gcalendar(ticket_id: str, email_invitados_adicionales: list 
             invitados.add(email)
     invitados.discard(None)
 
-    if not invitados:
-        return json.dumps({"error": "No se pudo determinar a quién invitar a la reunión."})
-
     # 2. Configurar detalles del evento
     titulo = f"Seguimiento para Tarea ({ticket_id})"
     detalles = f"Reunión para discutir los requerimientos de la tarea generada a partir del tiquete {ticket_id}."
     
-    # 3. Construir la URL inteligente SIN FECHAS para forzar la vista "Find a time"
+    # 3. Construir la URL inteligente SIN FECHAS para maximizar la probabilidad
+    #    de que se abra en la pestaña "Find a time".
     params = {
         "action": "TEMPLATE",
         "text": titulo,
         "details": detalles,
-        "add": ",".join(invitados) # Google Calendar prefiere los emails separados por comas
+        "add": ",".join(invitados)
     }
     base_url = "https://calendar.google.com/calendar/render?"
     url_final = base_url + urlencode(params)
     
-    # 4. Devolver la estructura de la tarjeta como un JSON para ser procesada por logic.py
+    # 4. Devolver la estructura de la tarjeta como un JSON
     card_data = {
         "type": "calendar_link",
         "invitados": list(invitados),
