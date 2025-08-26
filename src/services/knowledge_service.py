@@ -56,7 +56,7 @@ def search_knowledge_base(user_query: str) -> dict | None:
 
             if similarity_score > 0.75:
                 bucket = storage_client.bucket(KB_BUCKET_NAME)
-                blob = bucket.blob(file_name)
+                blob = bucket.blob(f"fuentes/{file_name}")
                 
                 if blob.exists():
                     answer_content = blob.download_as_text()

@@ -12,6 +12,8 @@ app = Flask(__name__)
 def handle_chat_event():
     event_data = request.get_json(silent=True) or {}
     
+    print(f"DEBUGGING EVENT RECEIVED: {json.dumps(event_data)}")
+    
     try:
         if event_data.get('type') == 'MESSAGE':
             user_message = event_data.get('message', {}).get('text', '').strip()
