@@ -17,10 +17,11 @@ from src.services.knowledge_service import search_knowledge_base
 model = None
 initialized = False
 
+# --- PROMPT MEJORADO Y MÁS DIRECTO ---
 system_prompt = """
 Eres 'Bladi', un asistente de Helpdesk virtual experto en todo lo referente a IT manager. Tu motor es Gemini 2.5 flash. Tu misión es entender la solicitud del usuario, determinar su prioridad, y ayudarlo a gestionar tiquetes de soporte de manera eficiente y amigable para el equipo correcto con el sla que cumple con la solicitud.
 **## Reglas Clave ##**
-- **Personalización:** Siempre que sea natural, dirígete al usuario por su nombre completo. El nombre completo se te proporcionará; úsalo para extraer el primer nombre y saludarlo o mencionarlo en la conversación.
+- **Personalización:** Siempre que sea natural, dirígete al usuario por su nombre completo. El nombre completo se te proporcionará; úsalo para extraer el nombre completo y saludarlo o mencionarlo en la conversación.
 - **IMPORTANTE:** El email y nombre del solicitante ya te fueron proporcionados automáticamente. **NUNCA le preguntes al usuario por su correo o nombre.**
 - **Validación de Dominio:** El sistema validará internamente que el dominio del correo sea autorizado.
 **## Proceso de Creación de Tiquetes ##**
@@ -35,13 +36,12 @@ Eres 'Bladi', un asistente de Helpdesk virtual experto en todo lo referente a IT
 - **Análisis de Métricas:** Si preguntan por estadísticas, usa `consultar_metricas`.
 - **Visualizar Flujo:** Si piden un 'historial' o 'diagrama', usa `visualizar_flujo_tiquete`.
 - **Convertir a Tarea:** Si una incidencia es una nueva funcionalidad, usa `convertir_incidencia_a_tarea` para crearla en Asana.
-- **Agendar Reuniones:** **IMPORTANTE:** Después de convertir una incidencia a una tarea de Asana, pregunta SIEMPRE al usuario si desea "agendar una reunión de seguimiento".
+- **Agendar Reuniones:** **IMPORTANTE:** Después de convertir una incidencia a una tarea de Asana, SIEMPRE pregunta proactivamente al usuario si desea "agendar una reunión de seguimiento".
   - **Paso 1:** Pregunta si quieren añadir a alguien más a la reunión.
-  - **Paso 2:** Si responden que sí, pídeles los correos adicionales para incluirlos como `email_invitados_adicionales`.
-  - **Paso 3:** Llama a la herramienta `agendar_reunion_gcalendar` usando únicamente el `ticket_id` y, si aplica, la lista de `email_invitados_adicionales`. **NUNCA preguntes por el correo del solicitante o del responsable, la herramienta los encontrará sola.**
+  - **Paso 2:** Si responden que sí, pídeles los correos. Si dicen que no, o no responden, continúa.
+  - **Paso 3:** Usa la herramienta `agendar_reunion_gcalendar` con el ID del tiquete y los correos adicionales que te hayan dado (si aplica). La herramienta encontrará al solicitante y al responsable automáticamente.
 - **Y el resto de tus habilidades...**
 """
-
 available_tools = {
     "crear_tiquete_helpdesk": ticket_manager.crear_tiquete,
     "consultar_estado_tiquete": ticket_querier.consultar_estado_tiquete,
@@ -141,6 +141,7 @@ def handle_dex_logic(user_message: str, user_email: str, user_display_name: str,
 
             tool_response_text = tool_to_call(**tool_args)
             
+            # --- INTERCEPTOR PARA TARJETAS INTERACTIVAS ---
             if tool_name == "visualizar_flujo_tiquete":
                 try:
                     data = json.loads(tool_response_text)
@@ -165,7 +166,45 @@ def handle_dex_logic(user_message: str, user_email: str, user_display_name: str,
                 except (json.JSONDecodeError, KeyError) as e:
                     print(f"🔴 Error al procesar la respuesta de la imagen: {e}")
                     return "Hubo un error inesperado al procesar la visualización del tiquete."
-            
+
+            if tool_name == "agendar_reunion_gcalendar":
+                try:
+                    data = json.loads(tool_response_text)
+                    if "error" in data:
+                        return data["error"]
+
+                    # Construir la tarjeta con un botón
+                    card = {
+                        "cardsV2": [{
+                            "cardId": "calendar_card",
+                            "card": {
+                                "header": {
+                                    "title": "Agendar Reunión de Seguimiento",
+                                    "subtitle": f"Para: {', '.join(data['invitados'])}",
+                                    "imageType": "CIRCLE",
+                                    "imageUrl": "https://i.ibb.co/VvfTff5/calendar-icon.png"
+                                },
+                                "sections": [{
+                                    "widgets": [{
+                                        "buttonList": {
+                                            "buttons": [{
+                                                "text": "Buscar Horario en G-Calendar",
+                                                "onClick": {
+                                                    "openLink": { "url": data['url'] }
+                                                }
+                                            }]
+                                        }
+                                    }]
+                                }]
+                            }
+                        }]
+                    }
+                    return card
+                except (json.JSONDecodeError, KeyError) as e:
+                    print(f"🔴 Error al procesar el enlace de calendario: {e}")
+                    return "Hubo un error inesperado al generar el enlace de la reunión."
+
+            # --- FLUJO NORMAL PARA RESPUESTAS DE TEXTO ---
             final_response = chat.send_message(
                 Part.from_function_response(name=tool_name, response={"content": tool_response_text})
             )

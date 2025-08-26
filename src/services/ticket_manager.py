@@ -13,7 +13,7 @@ from src.services.notification_service import enviar_notificacion_email, enviar_
 from urllib.parse import urlencode
 from src.services.asana_service import crear_tarea_asana
 
-
+# ... (Las funciones crear_tiquete, cerrar_tiquete, etc., no cambian y se mantienen como están) ...
 def crear_tiquete(descripcion: str, equipo_asignado: str, prioridad: str, solicitante: str, nombre_solicitante: str, **kwargs) -> str:
     """
     Crea un nuevo tiquete consultando dinámicamente el SLA desde BigQuery.
@@ -213,34 +213,31 @@ def convertir_incidencia_a_tarea(ticket_id: str, motivo: str, fecha_entrega: str
         print(f"🔴 Error al convertir tiquete a tarea: {e}")
         return f"Ocurrió un error inesperado durante la conversión: {e}"
 
+
 def agendar_reunion_gcalendar(ticket_id: str, email_invitados_adicionales: list = None, **kwargs) -> str:
     """
-    Construye y devuelve un enlace de Google Calendar con detalles automáticos y formato limpio.
+    Construye y devuelve un objeto JSON para una tarjeta de Google Chat con un enlace
+    de Google Calendar con detalles automáticos.
     """
     # 1. Obtener automáticamente al solicitante y responsable
     participantes = obtener_participantes_tiquete(ticket_id)
     if "error" in participantes:
-        return f"No pude encontrar a los participantes del tiquete: {participantes['error']}"
+        return json.dumps({"error": f"No pude encontrar a los participantes del tiquete: {participantes['error']}"})
     
     invitados = {participantes.get("solicitante"), participantes.get("responsable")}
-    # Añadir invitados adicionales si se proporcionaron
     if email_invitados_adicionales:
         for email in email_invitados_adicionales:
             invitados.add(email)
-            
-    # Eliminar posibles valores nulos si alguna de las partes no fue encontrada
     invitados.discard(None)
+
     if not invitados:
-        return "No se pudo determinar a quién invitar a la reunión."
+        return json.dumps({"error": "No se pudo determinar a quién invitar a la reunión."})
 
     # 2. Configurar detalles del evento con duración de 30 minutos
-    titulo = f"Seguimiento para Tarea (desde Tiquete {ticket_id})"
-    detalles = (
-        f"Reunión para discutir los requerimientos y próximos pasos de la tarea generada a partir del tiquete {ticket_id}.\n\n"
-        "Por favor, utiliza la función 'Buscar un horario' para encontrar el mejor momento para todos."
-    )
-    # Generamos una fecha/hora base para hoy, para que el enlace sea de 30 mins.
-    # El usuario lo ajustará a la fecha/hora final.
+    titulo = f"Seguimiento para Tarea ({ticket_id})"
+    detalles = f"Reunión para discutir los requerimientos de la tarea generada a partir del tiquete {ticket_id}."
+    
+    # 3. Construir la URL inteligente
     start_time = datetime.now().replace(hour=10, minute=0, second=0, microsecond=0)
     end_time = start_time + timedelta(minutes=30)
     dates = f"{start_time.strftime('%Y%m%dT%H%M%S')}/{end_time.strftime('%Y%m%dT%H%M%S')}"
@@ -249,20 +246,17 @@ def agendar_reunion_gcalendar(ticket_id: str, email_invitados_adicionales: list 
         "action": "TEMPLATE",
         "text": titulo,
         "details": detalles,
-        "add": list(invitados),
-        "dates": dates
+        "add": ",".join(invitados), # Google Calendar prefiere los emails separados por comas
+        "dates": dates,
+        "crm": "BUSY" 
     }
-
     base_url = "https://calendar.google.com/calendar/render?"
-    url_final = base_url + urlencode(params, doseq=True)
+    url_final = base_url + urlencode(params)
     
-    # 3. Formatear la respuesta con un enlace enmascarado
-    link_enmascarado = f"[*Haz clic aquí para abrir Google Calendar y buscar un horario*]({url_final})"
-    
-    respuesta_texto = (
-        f"¡Listo! He generado un enlace de reunión para los siguientes participantes: *{', '.join(invitados)}*.\n\n"
-        f"{link_enmascarado}\n\n"
-        "El evento está pre-configurado para durar 30 minutos. ¡Espero que sea muy útil!"
-    )
-    
-    return respuesta_texto
+    # 4. Devolver la estructura de la tarjeta como un JSON
+    card_data = {
+        "type": "calendar_link",
+        "invitados": list(invitados),
+        "url": url_final
+    }
+    return json.dumps(card_data)
