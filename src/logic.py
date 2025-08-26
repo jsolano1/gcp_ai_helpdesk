@@ -23,18 +23,18 @@ Eres 'Bladi', un asistente de Helpdesk virtual experto en todo lo referente a IT
 - **IMPORTANTE:** El email y nombre del solicitante ya te fueron proporcionados automáticamente. **NUNCA le preguntes al usuario por su correo o nombre.**
 - **Validación de Dominio:** El sistema validará internamente que el dominio del correo sea autorizado.
 **## Proceso de Creación de Tiquetes ##**
-**1. Análisis de Prioridad y SLA:**
-- **Prioridad Alta (8 horas):** Para solicitudes críticas como 'sistema caído' o 'ETL fallido'.
-- **Prioridad Media (24 horas):** Para problemas estándar como un dashboard con datos incorrectos. Es la prioridad por defecto.
-- **Prioridad Baja (72 horas):** Para solicitudes de nuevas funcionalidades.
+**1. Análisis de Prioridad:** Tu tarea es analizar la solicitud y asignar una de las tres prioridades. El SLA se calculará automáticamente basado en tu elección.
+- **Prioridad 'alta':** Para solicitudes críticas como 'sistema caído', 'ETL fallido', 'no funciona nada', o 'pérdida de datos'.
+- **Prioridad 'media':** Para problemas estándar como un dashboard con datos incorrectos o un reporte que no carga. Esta es la prioridad por defecto.
+- **Prioridad 'baja':** Para solicitudes de nuevas funcionalidades o preguntas generales sin urgencia.
 **2. Enrutamiento por Equipo:**
 - **"Data Engineering":** Para problemas de carga de datos, ETLs, pipelines.
 - **"Data Analyst / BI":** Para problemas con dashboards o métricas.
 **## Habilidades ##**
 - **Análisis de Métricas:** Si preguntan por estadísticas, usa `consultar_metricas`.
 - **Visualizar Flujo:** Si piden un 'historial' o 'diagrama', usa `visualizar_flujo_tiquete`.
-- **Convertir a Tarea:** Si una incidencia es una nueva funcionalidad, usa `convertir_incidencia_a_tarea` para crear Después de convertir una incidencia a una tarea de Asana, SIEMPRE pregunta proactivamente al usuario si desea "agendar una reunión de seguimiento". Si dice que sí, usa la herramienta `agendar_reunion_gcalendar` para generar el enlace. Para ello, necesitarás el ID del tiquete y los correos del solicitante y del responsable.la en Asana.
-- **Agendar Reuniones:** **IMPORTANTE:**
+- **Convertir a Tarea:** Si una incidencia es una nueva funcionalidad, usa `convertir_incidencia_a_tarea` para crearla en Asana.
+- **Agendar Reuniones:** **IMPORTANTE:** Después de convertir una incidencia a una tarea de Asana, SIEMPRE pregunta proactivamente al usuario si desea "agendar una reunión de seguimiento". Si dice que sí, usa la herramienta `agendar_reunion_gcalendar` para generar el enlace. Para ello, necesitarás el ID del tiquete y los correos del solicitante y del responsable.
 - **Y el resto de tus habilidades...**
 """
 
@@ -61,12 +61,12 @@ def initialize_ai():
 def tiene_permiso(rol: str, herramienta: str) -> bool:
     """Verifica si un rol tiene permiso para usar una herramienta."""
     permisos = {
-        "admin": ["crear_tiquete_helpdesk", "consultar_estado_tiquete", "cerrar_tiquete", "reasignar_tiquete", "modificar_sla_manual", "visualizar_flujo_tiquete", "consultar_metricas"],
-        "lead": ["crear_tiquete_helpdesk", "consultar_estado_tiquete", "cerrar_tiquete", "reasignar_tiquete", "modificar_sla_manual", "visualizar_flujo_tiquete", "consultar_metricas"],
+        "admin": ["crear_tiquete_helpdesk", "consultar_estado_tiquete", "cerrar_tiquete", "reasignar_tiquete", "modificar_sla_manual", "visualizar_flujo_tiquete", "consultar_metricas", "convertir_incidencia_a_tarea", "agendar_reunion_gcalendar"],
+        "lead": ["crear_tiquete_helpdesk", "consultar_estado_tiquete", "cerrar_tiquete", "reasignar_tiquete", "modificar_sla_manual", "visualizar_flujo_tiquete", "consultar_metricas", "convertir_incidencia_a_tarea", "agendar_reunion_gcalendar"],
         "agent": ["crear_tiquete_helpdesk", "consultar_estado_tiquete", "cerrar_tiquete", "visualizar_flujo_tiquete", "consultar_metricas"],
         "user": ["crear_tiquete_helpdesk", "consultar_estado_tiquete", "visualizar_flujo_tiquete", "consultar_metricas"]
     }
-    if rol == "admin":
+    if rol in ["admin", "lead"]:
         return True
     return herramienta in permisos.get(rol, [])
 
@@ -77,6 +77,22 @@ def handle_dex_logic(user_message: str, user_email: str, user_display_name: str,
     try:
         initialize_ai()
         
+        # --- PASO 1: BÚSQUEDA PREVIA EN LA BASE DE CONOCIMIENTO ---
+        if len(user_message.split()) > 3 and "estado" not in user_message.lower():
+            kb_result = search_knowledge_base(user_message)
+            if kb_result:
+                answer = kb_result['answer']
+                source = kb_result['source']
+                
+                response_text = (
+                    f"{answer}\n\n---\n"
+                    f"ℹ️ _Fuente: {source}_\n\n"
+                    "¿Resolvió esto tu duda? Si no, por favor describe tu problema con más detalle para crear un tiquete."
+                )
+                return response_text
+
+        # --- PASO 2: SI NO HAY RESPUESTA, CONTINUAR CON EL FLUJO NORMAL DE IA ---
+        print("▶️ No se encontró respuesta en KB, procediendo con el análisis de IA...")
         session_id = get_or_create_active_session(user_id)
         if not session_id:
             return "Lo siento, no pude iniciar una sesión de chat para ti."
@@ -121,15 +137,12 @@ def handle_dex_logic(user_message: str, user_email: str, user_display_name: str,
 
             tool_response_text = tool_to_call(**tool_args)
             
-            # --- INTERCEPTOR PARA LA VISUALIZACIÓN DE FLUJO ---
             if tool_name == "visualizar_flujo_tiquete":
                 try:
                     data = json.loads(tool_response_text)
                     if "error" in data:
-                        # Si la herramienta devolvió un error, lo mostramos como texto
                         return data["error"]
                     
-                    # Si todo fue exitoso, construimos y devolvemos la tarjeta de Chat
                     card = {
                         "cardsV2": [{
                             "cardId": f"flow_card_{data['ticketId']}",
@@ -137,24 +150,18 @@ def handle_dex_logic(user_message: str, user_email: str, user_display_name: str,
                                 "header": {
                                     "title": f"Línea de Tiempo del Tiquete {data['ticketId']}",
                                     "subtitle": "Aquí tienes el historial visual de tu solicitud.",
-                                    "imageUrl": "https://i.ibb.co/L1J50f1/timeline-icon.png", # Un ícono genérico para el encabezado
+                                    "imageUrl": "https://i.ibb.co/L1J50f1/timeline-icon.png",
                                     "imageType": "CIRCLE"
                                 },
-                                "sections": [{
-                                    "widgets": [{
-                                        "image": { "imageUrl": data['imageUrl'] }
-                                    }]
-                                }]
+                                "sections": [{"widgets": [{"image": { "imageUrl": data['imageUrl'] }}]}]
                             }
                         }]
                     }
-                    # Devolver el diccionario de la tarjeta directamente. La ejecución termina aquí para este caso.
                     return card
                 except (json.JSONDecodeError, KeyError) as e:
                     print(f"🔴 Error al procesar la respuesta de la imagen: {e}")
                     return "Hubo un error inesperado al procesar la visualización del tiquete."
             
-            # --- FLUJO NORMAL PARA TODAS LAS DEMÁS HERRAMIENTAS ---
             final_response = chat.send_message(
                 Part.from_function_response(name=tool_name, response={"content": tool_response_text})
             )
