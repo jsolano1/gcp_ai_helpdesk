@@ -13,7 +13,6 @@ from src.services.notification_service import enviar_notificacion_email, enviar_
 from urllib.parse import urlencode
 from src.services.asana_service import crear_tarea_asana
 
-# ... (Las funciones crear_tiquete, cerrar_tiquete, etc., no cambian y se mantienen como están) ...
 def crear_tiquete(descripcion: str, equipo_asignado: str, prioridad: str, solicitante: str, nombre_solicitante: str, **kwargs) -> str:
     """
     Crea un nuevo tiquete consultando dinámicamente el SLA desde BigQuery.
@@ -171,10 +170,8 @@ def convertir_incidencia_a_tarea(ticket_id: str, motivo: str, fecha_entrega: str
     if not existe: return f"Error: El tiquete '{id_normalizado}' no fue encontrado."
 
     try:
-        # 1. Obtener el estado actual para saber a quién está asignado
         estado_actual = consultar_estado_tiquete(id_normalizado)
         
-        # Extraer el email del responsable del texto de estado
         responsable_actual = ""
         if "asignado a " in estado_actual:
             responsable_actual = estado_actual.split(" a ")[-1].strip().replace('.','')
@@ -182,7 +179,6 @@ def convertir_incidencia_a_tarea(ticket_id: str, motivo: str, fecha_entrega: str
         if not responsable_actual:
             return "Error: No se pudo determinar el responsable actual del tiquete para asignarlo en Asana."
 
-        # 2. Crear la tarea en Asana
         nombre_tarea = f"Tarea [Desde Tiquete {id_normalizado}]"
         notas_tarea = f"Esta tarea fue convertida desde una incidencia.\n\nMotivo: {motivo}\nSolicitante: {solicitante_email}"
         
@@ -196,7 +192,6 @@ def convertir_incidencia_a_tarea(ticket_id: str, motivo: str, fecha_entrega: str
         if "error" in resultado_asana:
             return f"No se pudo crear la tarea en Asana: {resultado_asana['error']}"
 
-        # 3. Registrar el evento en BigQuery
         detalles_conversion = {
             "motivo": motivo,
             "convertido_por": solicitante_email,
@@ -219,7 +214,6 @@ def agendar_reunion_gcalendar(ticket_id: str, email_invitados_adicionales: list 
     Construye y devuelve un objeto JSON para una tarjeta de Google Chat con un enlace
     de Google Calendar optimizado para la vista "Find a time".
     """
-    # 1. Obtener automáticamente al solicitante y responsable
     participantes = obtener_participantes_tiquete(ticket_id)
     if "error" in participantes or not participantes.get("solicitante") or not participantes.get("responsable"):
         error_msg = participantes.get("error", "No se pudo determinar al solicitante o responsable.")
@@ -231,12 +225,9 @@ def agendar_reunion_gcalendar(ticket_id: str, email_invitados_adicionales: list 
             invitados.add(email)
     invitados.discard(None)
 
-    # 2. Configurar detalles del evento
     titulo = f"Seguimiento para Tarea ({ticket_id})"
     detalles = f"Reunión para discutir los requerimientos de la tarea generada a partir del tiquete {ticket_id}."
     
-    # 3. Construir la URL inteligente SIN FECHAS para maximizar la probabilidad
-    #    de que se abra en la pestaña "Find a time".
     params = {
         "action": "TEMPLATE",
         "text": titulo,
@@ -246,7 +237,6 @@ def agendar_reunion_gcalendar(ticket_id: str, email_invitados_adicionales: list 
     base_url = "https://calendar.google.com/calendar/render?"
     url_final = base_url + urlencode(params)
     
-    # 4. Devolver la estructura de la tarjeta como un JSON
     card_data = {
         "type": "calendar_link",
         "invitados": list(invitados),

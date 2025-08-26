@@ -91,7 +91,6 @@ def visualizar_flujo_tiquete(ticket_id: str, **kwargs) -> str:
         
         print(f"✅ Imagen disponible en: {blob.public_url}")
         
-        # Devuelve un JSON estructurado para ser procesado por la lógica del bot
         response_data = {
             "type": "image_flow",
             "imageUrl": blob.public_url,

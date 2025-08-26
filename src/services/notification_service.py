@@ -5,7 +5,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# --- Configuración para Webhook y Email ---
 GOOGLE_CHAT_WEBHOOK_URL = os.getenv("GOOGLE_CHAT_WEBHOOK_URL")
 BREVO_API_KEY = os.getenv("BREVO_API_KEY")
 BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"

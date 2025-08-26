@@ -80,7 +80,6 @@ def handle_dex_logic(user_message: str, user_email: str, user_display_name: str,
     try:
         initialize_ai()
         
-        # --- PASO 1: BÚSQUEDA PREVIA EN LA BASE DE CONOCIMIENTO ---
         if len(user_message.split()) > 3 and "estado" not in user_message.lower():
             kb_result = search_knowledge_base(user_message)
             if kb_result:
@@ -94,7 +93,6 @@ def handle_dex_logic(user_message: str, user_email: str, user_display_name: str,
                 )
                 return response_text
 
-        # --- PASO 2: SI NO HAY RESPUESTA, CONTINUAR CON EL FLUJO NORMAL DE IA ---
         print("▶️ No se encontró respuesta en KB, procediendo con el análisis de IA...")
         session_id = get_or_create_active_session(user_id)
         if not session_id:
@@ -107,7 +105,6 @@ def handle_dex_logic(user_message: str, user_email: str, user_display_name: str,
         
         chat = model.start_chat(history=history)
         
-        # --- CAMBIO A NOMBRE COMPLETO ---
         mensaje_con_contexto = f"[Mi nombre es {user_display_name}] {user_message}"
         response = chat.send_message(mensaje_con_contexto)
         
@@ -141,7 +138,6 @@ def handle_dex_logic(user_message: str, user_email: str, user_display_name: str,
 
             tool_response_text = tool_to_call(**tool_args)
             
-            # --- INTERCEPTOR PARA TARJETAS INTERACTIVAS ---
             if tool_name == "visualizar_flujo_tiquete":
                 try:
                     data = json.loads(tool_response_text)
@@ -173,7 +169,6 @@ def handle_dex_logic(user_message: str, user_email: str, user_display_name: str,
                     if "error" in data:
                         return data["error"]
 
-                    # Construir la tarjeta con un botón
                     card = {
                         "cardsV2": [{
                             "cardId": "calendar_card",
@@ -204,7 +199,6 @@ def handle_dex_logic(user_message: str, user_email: str, user_display_name: str,
                     print(f"🔴 Error al procesar el enlace de calendario: {e}")
                     return "Hubo un error inesperado al generar el enlace de la reunión."
 
-            # --- FLUJO NORMAL PARA RESPUESTAS DE TEXTO ---
             final_response = chat.send_message(
                 Part.from_function_response(name=tool_name, response={"content": tool_response_text})
             )

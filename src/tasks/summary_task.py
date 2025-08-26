@@ -109,7 +109,6 @@ def send_daily_summaries():
         enviar_notificacion_chat(admin_summary)
         return
 
-    # --- 1. Generar y enviar el resumen agregado para Administradores por Google Chat ---
     stats = defaultdict(lambda: defaultdict(lambda: {'total': 0, 'due_soon': 0, 'overdue': 0}))
     now = datetime.now(timezone.utc)
     four_hours_from_now = now + timedelta(hours=4)
@@ -138,7 +137,6 @@ def send_daily_summaries():
     print("📢 Enviando resumen de administrador al canal principal...")
     enviar_notificacion_chat(admin_summary)
 
-    # --- 2. Enviar correos privados y personales para cada usuario ---
     for user_email, tickets in user_tickets.items():
         asunto = "📄 Tu Resumen Diario de Tiquetes Abiertos"
         html_body = "<html><body><h2>Hola,</h2><p>Este es tu resumen diario de tiquetes de soporte abiertos:</p>"
@@ -146,7 +144,6 @@ def send_daily_summaries():
         html_body += "<tr style='background-color:#f2f2f2;'><th>ID del Tiquete</th><th>Asignado a</th><th>Estado del SLA</th></tr>"
         
         for ticket in tickets:
-            # Usamos is_email=True para obtener el nuevo formato de vencido
             time_left = format_time_remaining(ticket['due_date'], is_email=True)
             html_body += f"<tr><td>{ticket['ticket_id']}</td><td>{ticket['assignee']}</td><td style='text-align:center;'>{time_left}</td></tr>"
         

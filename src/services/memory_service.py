@@ -55,10 +55,8 @@ def save_chat_history(session_id: str, user_id_full: str, history: list, num_exi
     new_messages = history[num_existing:]
     if not new_messages: return
 
-    # 1. Convierte los objetos a diccionarios usando el método oficial .to_dict()
     items_to_save = [msg.to_dict() for msg in new_messages]
     
-    # 2. Añade nuestro campo personalizado 'timestamp' a cada diccionario
     for item in items_to_save:
         item['timestamp'] = now
 
@@ -85,13 +83,11 @@ def get_chat_history(session_id: str) -> list:
     reconstructed_history = []
     
     for item in history_from_db:
-        # 1. Crea un diccionario limpio solo con los campos que la librería entiende.
         clean_item = {
             "role": item.get("role"),
             "parts": item.get("parts", [])
         }
         
-        # 2. Reconstruye el objeto Content usando el diccionario limpio
         if clean_item["parts"]:
             reconstructed_history.append(Content.from_dict(clean_item))
             
