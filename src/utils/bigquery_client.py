@@ -152,3 +152,45 @@ def obtener_sla_por_configuracion(departamento: str, prioridad: str) -> int:
     except Exception as e:
         print(f"🔴 Error al obtener configuración de SLA: {e}. Usando 24h por defecto.")
         return 24
+
+def obtener_participantes_tiquete(ticket_id: str) -> dict:
+    """
+    Obtiene el correo del solicitante y del responsable actual de un tiquete.
+    """
+    id_normalizado = ticket_id.upper()
+    query = f"""
+    WITH UltimoResponsable AS (
+        SELECT
+            TicketID,
+            COALESCE(
+                JSON_EXTRACT_SCALAR(Detalles, '$.nuevo_responsable'),
+                JSON_EXTRACT_SCALAR(Detalles, '$.responsable_inicial')
+            ) as Responsable
+        FROM `{EVENTOS_TABLE_ID}`
+        WHERE TicketID = @ticket_id
+        ORDER BY FechaEvento DESC
+        LIMIT 1
+    )
+    SELECT
+        t.Solicitante,
+        ur.Responsable
+    FROM `{TICKETS_TABLE_ID}` t
+    LEFT JOIN UltimoResponsable ur ON t.TicketID = ur.TicketID
+    WHERE t.TicketID = @ticket_id
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[bigquery.ScalarQueryParameter("ticket_id", "STRING", id_normalizado)]
+    )
+    try:
+        results = list(client.query(query, job_config=job_config).result())
+        if not results:
+            return {"error": "No se encontraron participantes para el tiquete."}
+        
+        participantes = results[0]
+        return {
+            "solicitante": participantes.Solicitante,
+            "responsable": participantes.Responsable
+        }
+    except Exception as e:
+        print(f"🔴 Error al obtener participantes del tiquete {id_normalizado}: {e}")
+        return {"error": str(e)}

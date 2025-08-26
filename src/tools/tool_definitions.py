@@ -69,18 +69,18 @@ convertir_a_tarea_declaration = FunctionDeclaration(
 
 agendar_reunion_declaration = FunctionDeclaration(
     name="agendar_reunion_gcalendar",
-    description="Genera un enlace de Google Calendar para agendar una reunión de seguimiento entre el solicitante y el responsable de un tiquete. Es útil después de convertir una incidencia en una tarea de Asana para coordinar los próximos pasos.",
+    description="Genera un enlace de Google Calendar para agendar una reunión de seguimiento. Obtiene automáticamente al solicitante y responsable, y puede incluir invitados adicionales.",
     parameters={
         "type": "object",
         "properties": {
             "ticket_id": {"type": "string"},
-            "email_invitados": {
+            "email_invitados_adicionales": {
                 "type": "array",
-                "description": "Una lista de los correos electrónicos de las personas a invitar.",
+                "description": "Una lista opcional de correos electrónicos de otras personas a invitar.",
                 "items": {"type": "string"}
             }
         },
-        "required": ["ticket_id", "email_invitados"]
+        "required": ["ticket_id"]
     }
 )
 

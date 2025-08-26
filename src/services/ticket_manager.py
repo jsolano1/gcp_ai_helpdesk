@@ -4,13 +4,14 @@ from datetime import datetime, timedelta
 from google.cloud import bigquery
 from src.utils.bigquery_client import (
     client, registrar_evento, TICKETS_TABLE_ID, validar_tiquete, 
-    obtener_departamento_tiquete, obtener_sla_por_configuracion
+    obtener_departamento_tiquete, obtener_sla_por_configuracion,
+    obtener_participantes_tiquete
 )
 from src.config import DATA_ENGINEERING_LEAD, BI_ANALYST_LEAD
 from src.services.ticket_querier import consultar_estado_tiquete
 from src.services.notification_service import enviar_notificacion_email, enviar_notificacion_chat
 from urllib.parse import urlencode
-from src.services.asana_service import crear_tarea_asana 
+from src.services.asana_service import crear_tarea_asana
 
 
 def crear_tiquete(descripcion: str, equipo_asignado: str, prioridad: str, solicitante: str, nombre_solicitante: str, **kwargs) -> str:
@@ -212,27 +213,54 @@ def convertir_incidencia_a_tarea(ticket_id: str, motivo: str, fecha_entrega: str
         print(f"🔴 Error al convertir tiquete a tarea: {e}")
         return f"Ocurrió un error inesperado durante la conversión: {e}"
 
-def agendar_reunion_gcalendar(ticket_id: str, email_invitados: list, **kwargs) -> str:
+def agendar_reunion_gcalendar(ticket_id: str, email_invitados_adicionales: list = None, **kwargs) -> str:
     """
-    Construye y devuelve un enlace de Google Calendar con los detalles pre-rellenados.
+    Construye y devuelve un enlace de Google Calendar con detalles automáticos y formato limpio.
     """
-    titulo = f"Reunión de seguimiento para Tarea (desde Tiquete {ticket_id})"
+    # 1. Obtener automáticamente al solicitante y responsable
+    participantes = obtener_participantes_tiquete(ticket_id)
+    if "error" in participantes:
+        return f"No pude encontrar a los participantes del tiquete: {participantes['error']}"
+    
+    invitados = {participantes.get("solicitante"), participantes.get("responsable")}
+    # Añadir invitados adicionales si se proporcionaron
+    if email_invitados_adicionales:
+        for email in email_invitados_adicionales:
+            invitados.add(email)
+            
+    # Eliminar posibles valores nulos si alguna de las partes no fue encontrada
+    invitados.discard(None)
+
+    # 2. Configurar detalles del evento con duración de 30 minutos
+    titulo = f"Seguimiento para Tarea (desde Tiquete {ticket_id})"
     detalles = (
         f"Reunión para discutir los requerimientos y próximos pasos de la tarea generada a partir del tiquete {ticket_id}.\n\n"
         "Por favor, utiliza la función 'Buscar un horario' para encontrar el mejor momento para todos."
     )
+    # Generamos una fecha/hora base para hoy, para que el enlace sea de 30 mins.
+    # El usuario lo ajustará a la fecha/hora final.
+    start_time = datetime.now().replace(hour=10, minute=0, second=0, microsecond=0)
+    end_time = start_time + timedelta(minutes=30)
+    dates = f"{start_time.strftime('%Y%m%dT%H%M%S')}/{end_time.strftime('%Y%m%dT%H%M%S')}"
 
     params = {
         "action": "TEMPLATE",
         "text": titulo,
         "details": detalles,
-        "add": email_invitados, 
-        "crm": "BUSY"
+        "add": list(invitados),
+        "dates": dates
     }
 
     base_url = "https://calendar.google.com/calendar/render?"
     url_final = base_url + urlencode(params, doseq=True)
     
-    respuesta_texto = f"¡Claro! He generado un enlace para que puedan agendar la reunión fácilmente. Solo haz clic y busca un horario disponible para todos: {url_final}"
+    # 3. Formatear la respuesta con un enlace enmascarado
+    link_enmascarado = f"[*Haz clic aquí para abrir Google Calendar y buscar un horario*]({url_final})"
+    
+    respuesta_texto = (
+        f"¡Listo! He generado un enlace de reunión para los siguientes participantes: *{', '.join(invitados)}*.\n\n"
+        f"{link_enmascarado}\n\n"
+        "El evento está pre-configurado para durar 30 minutos. ¡Espero que sea muy útil!"
+    )
     
     return respuesta_texto
