@@ -217,7 +217,7 @@ def convertir_incidencia_a_tarea(ticket_id: str, motivo: str, fecha_entrega: str
 def agendar_reunion_gcalendar(ticket_id: str, email_invitados_adicionales: list = None, **kwargs) -> str:
     """
     Construye y devuelve un objeto JSON para una tarjeta de Google Chat con un enlace
-    de Google Calendar con detalles automáticos.
+    de Google Calendar que abre directamente en la vista para buscar horarios.
     """
     # 1. Obtener automáticamente al solicitante y responsable
     participantes = obtener_participantes_tiquete(ticket_id)
@@ -233,27 +233,21 @@ def agendar_reunion_gcalendar(ticket_id: str, email_invitados_adicionales: list 
     if not invitados:
         return json.dumps({"error": "No se pudo determinar a quién invitar a la reunión."})
 
-    # 2. Configurar detalles del evento con duración de 30 minutos
+    # 2. Configurar detalles del evento
     titulo = f"Seguimiento para Tarea ({ticket_id})"
     detalles = f"Reunión para discutir los requerimientos de la tarea generada a partir del tiquete {ticket_id}."
     
-    # 3. Construir la URL inteligente
-    start_time = datetime.now().replace(hour=10, minute=0, second=0, microsecond=0)
-    end_time = start_time + timedelta(minutes=30)
-    dates = f"{start_time.strftime('%Y%m%dT%H%M%S')}/{end_time.strftime('%Y%m%dT%H%M%S')}"
-
+    # 3. Construir la URL inteligente SIN FECHAS para forzar la vista "Find a time"
     params = {
         "action": "TEMPLATE",
         "text": titulo,
         "details": detalles,
-        "add": ",".join(invitados), # Google Calendar prefiere los emails separados por comas
-        "dates": dates,
-        "crm": "BUSY" 
+        "add": ",".join(invitados) # Google Calendar prefiere los emails separados por comas
     }
     base_url = "https://calendar.google.com/calendar/render?"
     url_final = base_url + urlencode(params)
     
-    # 4. Devolver la estructura de la tarjeta como un JSON
+    # 4. Devolver la estructura de la tarjeta como un JSON para ser procesada por logic.py
     card_data = {
         "type": "calendar_link",
         "invitados": list(invitados),
