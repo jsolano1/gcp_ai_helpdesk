@@ -13,13 +13,12 @@ LOCATION = os.getenv("LOCATION")
 KB_BUCKET_NAME = os.getenv("KNOWLEDGE_BASE_BUCKET")
 VECTOR_SEARCH_INDEX_ID = os.getenv("VECTOR_SEARCH_INDEX_ID")
 VECTOR_SEARCH_ENDPOINT_ID = os.getenv("VECTOR_SEARCH_ENDPOINT_ID")
-EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME")
-DEPLOYED_INDEX_ID = f"deployed_{VECTOR_SEARCH_INDEX_ID}" if VECTOR_SEARCH_INDEX_ID else None
+EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "text-embedding-005")
+DEPLOYED_INDEX_ID = os.getenv("DEPLOYED_INDEX_ID")
 
 # --- Inicialización de Clientes de Google Cloud ---
 try:
     vertexai.init(project=GCP_PROJECT_ID, location=LOCATION)
-    # Usamos la nueva variable de entorno aquí
     embedding_model = TextEmbeddingModel.from_pretrained(EMBEDDING_MODEL_NAME)
     storage_client = storage.Client()
     aiplatform.init(project=GCP_PROJECT_ID, location=LOCATION)
