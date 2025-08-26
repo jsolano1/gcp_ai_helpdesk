@@ -1,4 +1,3 @@
-
 from vertexai.generative_models import Tool, FunctionDeclaration
 
 crear_tiquete_declaration = FunctionDeclaration(

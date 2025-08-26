@@ -230,6 +230,8 @@ def agendar_reunion_gcalendar(ticket_id: str, email_invitados_adicionales: list 
             
     # Eliminar posibles valores nulos si alguna de las partes no fue encontrada
     invitados.discard(None)
+    if not invitados:
+        return "No se pudo determinar a quién invitar a la reunión."
 
     # 2. Configurar detalles del evento con duración de 30 minutos
     titulo = f"Seguimiento para Tarea (desde Tiquete {ticket_id})"

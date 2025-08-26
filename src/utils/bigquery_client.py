@@ -1,4 +1,3 @@
-
 import os
 import uuid
 import json
@@ -84,13 +83,11 @@ def obtener_rol_usuario(user_email: str) -> (str, str):
             print(f"✅ Rol encontrado para {user_email}: {user_data.role}")
             return user_data.role, user_data.department
         else:
-            # Si no está en la tabla, es un usuario estándar
             print(f"✅ Usuario {user_email} no encontrado en tabla de roles. Asignado rol 'user'.")
             return "user", None
             
     except Exception as e:
         print(f"🔴 Error al obtener el rol para {user_email}: {e}")
-        # En caso de error, se asigna el rol más restrictivo por seguridad
         return "user", None
 
 def obtener_departamento_tiquete(ticket_id: str) -> str:
@@ -113,7 +110,7 @@ def obtener_departamento_tiquete(ticket_id: str) -> str:
         results = list(client.query(query, job_config=job_config).result())
         if results and results[0].departamento:
             return results[0].departamento
-        return None  # Retorna None si no se encuentra
+        return None
     except Exception as e:
         print(f"🔴 Error al obtener el departamento del tiquete {id_normalizado}: {e}")
         return None
@@ -121,7 +118,6 @@ def obtener_departamento_tiquete(ticket_id: str) -> str:
 def obtener_sla_por_configuracion(departamento: str, prioridad: str) -> int:
     """
     Consulta la tabla de configuración para obtener las horas de SLA.
-    Si no encuentra una regla específica, devuelve un SLA por defecto de 24 horas.
     """
     prioridad_limpia = prioridad.lower()
     if "alta" in prioridad_limpia: prioridad_final = "alta"
