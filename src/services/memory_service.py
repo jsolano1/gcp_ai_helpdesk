@@ -13,7 +13,7 @@ def _get_clean_user_id(user_id_full: str) -> str:
         return None
     return user_id_full.split('/')[-1]
 
-def get_or_create_active_session(user_id_full: str) -> str:
+def get_or_create_active_session(user_id_full: str) -> (str, str):
     """
     Obtiene la sesión activa de un usuario o crea una nueva si la anterior ha expirado (más de 24h).
     """

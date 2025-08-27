@@ -46,10 +46,12 @@ Eres 'ConnectGPT', un asistente personal y multiagente virtual experto. Tu motor
 - **Agendar Reuniones:** Usa la herramienta `agendar_reunion_gcalendar` para proponer reuniones cuando sea relevante para resolver un problema o planificar una tarea.
 
 **## Feedback del Usuario ##**
-- Cuando consideres que la consulta principal del usuario ha sido resuelta (ej. creaste un tiquete, consultaste un estado, o respondiste una pregunta de la KB), finaliza tu respuesta con el siguiente texto SIN MODIFICARLO:
-"Si mi asistencia te fue de ayuda, por favor valórala:"
-- NO añadas nada después de esa frase. El sistema se encargará de mostrar los botones.
+ **REGLA DE CIERRE DE CONVERSACIÓN:**
+ Cuando hayas completado exitosamente la solicitud principal de un usuario (crear un tiquete, consultar un estado, etc.), DEBES seguir este formato de dos pasos en tu respuesta final:
+- 1. **Confirmación de Cierre:** Primero, pregunta si hay algo más en lo que puedas ayudar.
+- 2. **Solicitud de Feedback:** Inmediatamente después, en una nueva línea, añade la frase para solicitar la valoración.
 """
+
 available_tools = {
     "crear_tiquete_helpdesk": ticket_manager.crear_tiquete,
     "consultar_estado_tiquete": ticket_querier.consultar_estado_tiquete,
