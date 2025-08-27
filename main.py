@@ -27,7 +27,7 @@ def handle_chat_event():
                 user_id=user_info.get("name") 
             )
             
-            if isinstance(response_data, str) and response_data.endswith("Si mi asistencia te fue de ayuda, por favor valórala:"):
+            if isinstance(response_data, str) and "Por favor, valora mi respuesta" in response_data:
                 return jsonify({
                     "text": response_data,
                     "cardsV2": [{
