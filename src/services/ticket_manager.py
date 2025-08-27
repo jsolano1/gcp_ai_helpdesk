@@ -229,28 +229,67 @@ def convertir_incidencia_a_tarea(ticket_id: str, motivo: str, fecha_entrega: str
         return f"Ocurrió un error inesperado durante la conversión: {e}"
 
 
-def agendar_reunion_gcalendar(ticket_id: str, email_invitados_adicionales: list = None, **kwargs) -> str:
-    """
-    Construye y devuelve un objeto JSON para una tarjeta de Google Chat con un enlace
-    de Google Calendar optimizado para la vista "Find a time".
-    """
-    participantes = obtener_participantes_tiquete(ticket_id)
-    if "error" in participantes or not participantes.get("solicitante") or not participantes.get("responsable"):
-        error_msg = participantes.get("error", "No se pudo determinar al solicitante o responsable.")
-        return json.dumps({"error": f"No pude encontrar a los participantes: {error_msg}"})
+# def agendar_reunion_gcalendar(ticket_id: str, email_invitados_adicionales: list = None, **kwargs) -> str:
+#     """
+#     Construye y devuelve un objeto JSON para una tarjeta de Google Chat con un enlace
+#     de Google Calendar optimizado para la vista "Find a time".
+#     """
+#     participantes = obtener_participantes_tiquete(ticket_id)
+#     if "error" in participantes or not participantes.get("solicitante") or not participantes.get("responsable"):
+#         error_msg = participantes.get("error", "No se pudo determinar al solicitante o responsable.")
+#         return json.dumps({"error": f"No pude encontrar a los participantes: {error_msg}"})
     
-    invitados = {participantes.get("solicitante"), participantes.get("responsable")}
+#     invitados = {participantes.get("solicitante"), participantes.get("responsable")}
+#     if email_invitados_adicionales:
+#         for email in email_invitados_adicionales:
+#             invitados.add(email)
+#     invitados.discard(None)
+
+#     titulo = f"Seguimiento para Tarea ({ticket_id})"
+#     detalles = f"Reunión para discutir los requerimientos de la tarea generada a partir del tiquete {ticket_id}."
+    
+#     params = {
+#         "action": "TEMPLATE",
+#         "text": titulo,
+#         "details": detalles,
+#         "add": ",".join(invitados)
+#     }
+#     base_url = "https://calendar.google.com/calendar/render?"
+#     url_final = base_url + urlencode(params)
+    
+#     card_data = {
+#         "type": "calendar_link",
+#         "invitados": list(invitados),
+#         "url": url_final
+#     }
+#     return json.dumps(card_data)
+
+
+def agendar_reunion_gcalendar(titulo_reunion: str, solicitante_email: str, ticket_id: str = None, email_invitados_adicionales: list = None, **kwargs) -> str:
+    """
+    Construye un enlace de Google Calendar. Si se provee un ticket_id, busca a los participantes;
+    de lo contrario, solo usa al solicitante y los invitados adicionales.
+    """
+    invitados = {solicitante_email}
+    
+    if ticket_id:
+        participantes = obtener_participantes_tiquete(ticket_id)
+        if "error" not in participantes:
+            invitados.add(participantes.get("solicitante"))
+            invitados.add(participantes.get("responsable"))
+
     if email_invitados_adicionales:
         for email in email_invitados_adicionales:
             invitados.add(email)
     invitados.discard(None)
 
-    titulo = f"Seguimiento para Tarea ({ticket_id})"
-    detalles = f"Reunión para discutir los requerimientos de la tarea generada a partir del tiquete {ticket_id}."
+    detalles = f"Reunión para discutir el tema: {titulo_reunion}."
+    if ticket_id:
+        detalles += f"\nContexto del tiquete: {ticket_id}"
     
     params = {
         "action": "TEMPLATE",
-        "text": titulo,
+        "text": titulo_reunion,
         "details": detalles,
         "add": ",".join(invitados)
     }

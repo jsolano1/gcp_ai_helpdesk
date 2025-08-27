@@ -60,7 +60,7 @@ def search_knowledge_base(user_query: str) -> dict | None:
                 
                 if blob.exists():
                     answer_content = blob.download_as_text()
-                    return {"answer": answer_content, "source": file_name}
+                    return {"answer": answer_content, "source": "Knowledge Base - Data Engineering Connect"}
 
         print("ℹ️  No se encontraron resultados suficientemente relevantes en la base de conocimiento.")
         return None

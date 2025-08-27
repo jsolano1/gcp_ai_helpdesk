@@ -12,8 +12,6 @@ app = Flask(__name__)
 def handle_chat_event():
     event_data = request.get_json(silent=True) or {}
     
-    print(f"DEBUGGING EVENT RECEIVED: {json.dumps(event_data)}")
-    
     try:
         if event_data.get('type') == 'MESSAGE':
             user_message = event_data.get('message', {}).get('text', '').strip()
@@ -34,7 +32,7 @@ def handle_chat_event():
                 return jsonify({"text": "No se pudo procesar la respuesta."})
 
         elif event_data.get('type') == 'ADDED_TO_SPACE':
-            return jsonify({"text": "¡Gracias por añadirme! Soy ConnectAI, tu asistente de Helpdesk."})
+            return jsonify({"text": "¡Gracias por añadirme! Soy ConnectAI, tu asistente personal."})
 
         return jsonify({})
 

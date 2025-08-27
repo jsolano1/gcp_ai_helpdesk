@@ -202,3 +202,50 @@ def obtener_participantes_tiquete(ticket_id: str) -> dict:
     except Exception as e:
         print(f"🔴 Error al obtener participantes del tiquete {id_normalizado}: {e}")
         return {"error": str(e)}
+
+def registrar_feedback(session_id: str, user_email: str, rating: int):
+    """Inserta una nueva valoración de NPS en la tabla de feedback."""
+    feedback_id = str(uuid.uuid4())
+    NPS_TABLE_ID = f"{GCP_PROJECT_ID}.{BIGQUERY_DATASET_ID}.nps_feedback"
+    
+    query = f"""
+        INSERT INTO `{NPS_TABLE_ID}` 
+        (feedback_id, session_id, user_email, rating, timestamp)
+        VALUES (@feedback_id, @session_id, @user_email, @rating, @timestamp)
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("feedback_id", "STRING", feedback_id),
+            bigquery.ScalarQueryParameter("session_id", "STRING", session_id),
+            bigquery.ScalarQueryParameter("user_email", "STRING", user_email),
+            bigquery.ScalarQueryParameter("rating", "INTEGER", rating),
+            bigquery.ScalarQueryParameter("timestamp", "TIMESTAMP", datetime.utcnow()),
+        ]
+    )
+    client.query(query, job_config=job_config).result()
+    print(f"✅ Feedback registrado para la sesión {session_id}.")
+
+def actualizar_feedback_comentario(session_id: str, comment: str):
+    """
+    Busca el último feedback negativo de una sesión y le añade el comentario del usuario.
+    """
+    NPS_TABLE_ID = f"{GCP_PROJECT_ID}.{BIGQUERY_DATASET_ID}.nps_feedback"
+    query = f"""
+        UPDATE `{NPS_TABLE_ID}`
+        SET comment = @comment
+        WHERE feedback_id = (
+            SELECT feedback_id
+            FROM `{NPS_TABLE_ID}`
+            WHERE session_id = @session_id AND rating = 0
+            ORDER BY timestamp DESC
+            LIMIT 1
+        )
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("comment", "STRING", comment),
+            bigquery.ScalarQueryParameter("session_id", "STRING", session_id),
+        ]
+    )
+    client.query(query, job_config=job_config).result()
+    print(f"✅ Comentario de feedback actualizado para la sesión {session_id}.")

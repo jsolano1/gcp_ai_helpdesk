@@ -10,19 +10,26 @@ GEMINI_CHAT_MODEL = os.getenv("GEMINI_CHAT_MODEL")
 from src.config import GCP_PROJECT_ID, LOCATION
 from src.services import ticket_manager, ticket_querier, ticket_visualizer
 from src.tools.tool_definitions import all_tools_config
-from src.services.memory_service import get_chat_history, save_chat_history, get_or_create_active_session
-from src.utils.bigquery_client import obtener_rol_usuario
+from src.services.memory_service import get_chat_history, save_chat_history, get_or_create_active_session, set_session_state
+from src.utils.bigquery_client import obtener_rol_usuario, actualizar_feedback_comentario
 from src.services.knowledge_service import search_knowledge_base
 
 model = None
 initialized = False
 
 system_prompt = """
-Eres 'Bladi', un asistente de Helpdesk virtual experto en todo lo referente a IT manager. Tu motor es Gemini 2.5 flash. Tu misión es entender la solicitud del usuario, determinar su prioridad, y ayudarlo a gestionar tiquetes de soporte de manera eficiente y amigable para el equipo correcto con el sla que cumple con la solicitud.
+Eres 'ConnectGPT', un asistente personal y multiagente virtual experto. Tu motor es Gemini 2.5 flash. Tu misión es entender la solicitud del usuario, y resolverle en base al KB o determinar si es un tiquete y su prioridad, para ayudarlo a gestionar tiquetes de soporte de manera eficiente y amigable con el equipo correcto y que el sla que cumple con la solicitud.
+
 **## Reglas Clave ##**
 - **Personalización:** Dirígete al usuario por su nombre completo. El nombre completo se te proporcionará en la conversación.
 - **IMPORTANTE:** El email y nombre del solicitante ya te fueron proporcionados automáticamente. **NUNCA le preguntes al usuario por su correo o nombre.**
-- **Validación de Dominio:** El sistema validará internamente que el dominio del correo sea autorizado.
+- **Validación de Dominio:** El sistema validará internamente que el dominio del correo sea autorizado. debe ser @connect.inc, @consoda.com o premier.pr
+
+**## Manejo de Sentimientos ##**
+- La conversación iniciará con el sentimiento del usuario (ej. 'negativo').
+- **Si el sentimiento es 'negativo':** Adopta un tono especialmente empático y proactivo. Reconoce la frustración del usuario. Por ejemplo: "Entiendo completamente tu frustración con esto, haré todo lo posible para solucionarlo rápidamente."
+- **Si el sentimiento es 'positivo' o 'neutro':** Mantén tu tono amigable y eficiente estándar.
+
 **## Proceso de Creación de Tiquetes ##**
 **1. Análisis de Prioridad:** Tu tarea es analizar la solicitud y asignar una de las tres prioridades. El SLA se calculará automáticamente basado en tu elección.
 - **Prioridad 'alta':** Para solicitudes críticas como 'sistema caído', 'ETL fallido', 'no funciona nada', o 'pérdida de datos'.
@@ -31,15 +38,17 @@ Eres 'Bladi', un asistente de Helpdesk virtual experto en todo lo referente a IT
 **2. Enrutamiento por Equipo:**
 - **"Data Engineering":** Para problemas de carga de datos, ETLs, pipelines.
 - **"Data Analyst / BI":** Para problemas con dashboards o métricas.
+
 **## Habilidades ##**
 - **Análisis de Métricas:** Si preguntan por estadísticas, usa `consultar_metricas`.
 - **Visualizar Flujo:** Si piden un 'historial' o 'diagrama', usa `visualizar_flujo_tiquete`.
 - **Convertir a Tarea:** Si una incidencia es una nueva funcionalidad, usa `convertir_incidencia_a_tarea` para crearla en Asana.
-- **Agendar Reuniones:** **REGLA CRÍTICA INQUEBRANTABLE:** Después de que el usuario confirme la conversión de una incidencia a tarea, pregunta siempre si desean agendar una reunión.
-  - **Paso 1:** Pregunta: "¿Deseas añadir a alguien más a la invitación?".
-  - **Paso 2:** Si el usuario te da correos, perfecto. Si no, no pasa nada.
-  - **Paso 3:** Activa la herramienta `agendar_reunion_gcalendar`. **TIENES PROHIBIDO PREGUNTAR por el correo del responsable o del solicitante.** La herramienta los encontrará automáticamente. Tu única misión es pasarle el `ticket_id` y los correos adicionales si el usuario los proporcionó. Si no tienes el ticket_id, pídelo.
-- **Y el resto de tus habilidades...**
+- **Agendar Reuniones:** Usa la herramienta `agendar_reunion_gcalendar` para proponer reuniones cuando sea relevante para resolver un problema o planificar una tarea.
+
+**## Feedback del Usuario ##**
+- Cuando consideres que la consulta principal del usuario ha sido resuelta (ej. creaste un tiquete, consultaste un estado, o respondiste una pregunta de la KB), finaliza tu respuesta con el siguiente texto SIN MODIFICARLO:
+"Si mi asistencia te fue de ayuda, por favor valórala:"
+- NO añadas nada después de esa frase. El sistema se encargará de mostrar los botones.
 """
 available_tools = {
     "crear_tiquete_helpdesk": ticket_manager.crear_tiquete,
@@ -61,43 +70,59 @@ def initialize_ai():
         model = GenerativeModel(GEMINI_CHAT_MODEL, system_instruction=system_prompt, tools=[all_tools_config])
         initialized = True
 
+def analizar_sentimiento(user_message: str) -> str:
+    """Clasifica el sentimiento de un mensaje usando el modelo de chat principal."""
+    try:
+        sentiment_model = GenerativeModel(GEMINI_CHAT_MODEL)
+        prompt = f"""
+        Analiza el sentimiento del siguiente texto y clasifícalo estrictamente como 'positivo', 'negativo' o 'neutro'.
+        Responde únicamente con una de esas tres palabras.
+        Texto: "{user_message}"
+        """
+        response = sentiment_model.generate_content(prompt)
+        return response.text.strip().lower()
+    except Exception as e:
+        print(f"⚠️  Advertencia: No se pudo analizar el sentimiento. {e}")
+        return "neutro"
+
 def tiene_permiso(rol: str, herramienta: str) -> bool:
     """Verifica si un rol tiene permiso para usar una herramienta."""
     permisos = {
-        "admin": ["crear_tiquete_helpdesk", "consultar_estado_tiquete", "cerrar_tiquete", "reasignar_tiquete", "modificar_sla_manual", "visualizar_flujo_tiquete", "consultar_metricas", "convertir_incidencia_a_tarea", "agendar_reunion_gcalendar"],
-        "lead": ["crear_tiquete_helpdesk", "consultar_estado_tiquete", "cerrar_tiquete", "reasignar_tiquete", "modificar_sla_manual", "visualizar_flujo_tiquete", "consultar_metricas", "convertir_incidencia_a_tarea", "agendar_reunion_gcalendar"],
+        "admin": list(available_tools.keys()),
+        "lead": list(available_tools.keys()),
         "agent": ["crear_tiquete_helpdesk", "consultar_estado_tiquete", "cerrar_tiquete", "visualizar_flujo_tiquete", "consultar_metricas"],
         "user": ["crear_tiquete_helpdesk", "consultar_estado_tiquete", "visualizar_flujo_tiquete", "consultar_metricas"]
     }
-    if rol in ["admin", "lead"]:
-        return True
     return herramienta in permisos.get(rol, [])
 
 def handle_dex_logic(user_message: str, user_email: str, user_display_name: str, user_id: str):
     """
-    Maneja la lógica de la conversación, ahora con búsqueda previa en la base de conocimiento.
+    Maneja la lógica de la conversación, con análisis de sentimiento y estado de feedback.
     """
     try:
         initialize_ai()
         
+        session_id, session_state = get_or_create_active_session(user_id)
+        if not session_id:
+            return "Lo siento, no pude iniciar una sesión de chat para ti."
+
+        if session_state == 'AWAITING_FEEDBACK_COMMENT':
+            actualizar_feedback_comentario(session_id, user_message)
+            set_session_state(user_id, None)
+            return "Muchas gracias por tus comentarios, los tomaré en cuenta para mejorar."
+
         if len(user_message.split()) > 3 and "estado" not in user_message.lower():
             kb_result = search_knowledge_base(user_message)
             if kb_result:
                 answer = kb_result['answer']
-                source = kb_result['source']
-                
                 response_text = (
                     f"{answer}\n\n---\n"
-                    f"ℹ️ _Fuente: {source}_\n\n"
+                    f"ℹ️ _Fuente: Knowledge Base Data Connect_\n\n"
                     "¿Resolvió esto tu duda? Si no, por favor describe tu problema con más detalle para crear un tiquete."
                 )
                 return response_text
 
         print("▶️ No se encontró respuesta en KB, procediendo con el análisis de IA...")
-        session_id = get_or_create_active_session(user_id)
-        if not session_id:
-            return "Lo siento, no pude iniciar una sesión de chat para ti."
-
         user_role, user_department = obtener_rol_usuario(user_email)
         
         history = get_chat_history(session_id)
@@ -105,7 +130,8 @@ def handle_dex_logic(user_message: str, user_email: str, user_display_name: str,
         
         chat = model.start_chat(history=history)
         
-        mensaje_con_contexto = f"[Mi nombre es {user_display_name}] {user_message}"
+        sentimiento = analizar_sentimiento(user_message)
+        mensaje_con_contexto = f"[Mi nombre es {user_display_name} y mi sentimiento actual es '{sentimiento}'] {user_message}"
         response = chat.send_message(mensaje_con_contexto)
         
         function_call = None
@@ -141,24 +167,13 @@ def handle_dex_logic(user_message: str, user_email: str, user_display_name: str,
             if tool_name == "visualizar_flujo_tiquete":
                 try:
                     data = json.loads(tool_response_text)
-                    if "error" in data:
-                        return data["error"]
+                    if "error" in data: return data["error"]
                     
-                    card = {
+                    return {
                         "cardsV2": [{
-                            "cardId": f"flow_card_{data['ticketId']}",
-                            "card": {
-                                "header": {
-                                    "title": f"Línea de Tiempo del Tiquete {data['ticketId']}",
-                                    "subtitle": "Aquí tienes el historial visual de tu solicitud.",
-                                    "imageUrl": "https://i.ibb.co/L1J50f1/timeline-icon.png",
-                                    "imageType": "CIRCLE"
-                                },
-                                "sections": [{"widgets": [{"image": { "imageUrl": data['imageUrl'] }}]}]
-                            }
+                            "cardId": f"flow_card_{data['ticketId']}", "card": { "header": { "title": f"Línea de Tiempo del Tiquete {data['ticketId']}", "subtitle": "Aquí tienes el historial visual de tu solicitud.", "imageUrl": "https://i.ibb.co/L1J50f1/timeline-icon.png", "imageType": "CIRCLE" }, "sections": [{"widgets": [{"image": { "imageUrl": data['imageUrl'] }}]}] }
                         }]
                     }
-                    return card
                 except (json.JSONDecodeError, KeyError) as e:
                     print(f"🔴 Error al procesar la respuesta de la imagen: {e}")
                     return "Hubo un error inesperado al procesar la visualización del tiquete."
@@ -166,35 +181,13 @@ def handle_dex_logic(user_message: str, user_email: str, user_display_name: str,
             if tool_name == "agendar_reunion_gcalendar":
                 try:
                     data = json.loads(tool_response_text)
-                    if "error" in data:
-                        return data["error"]
+                    if "error" in data: return data["error"]
 
-                    card = {
+                    return {
                         "cardsV2": [{
-                            "cardId": "calendar_card",
-                            "card": {
-                                "header": {
-                                    "title": "Agendar Reunión de Seguimiento",
-                                    "subtitle": f"Para: {', '.join(data['invitados'])}",
-                                    "imageType": "CIRCLE",
-                                    "imageUrl": "https://i.ibb.co/VvfTff5/calendar-icon.png"
-                                },
-                                "sections": [{
-                                    "widgets": [{
-                                        "buttonList": {
-                                            "buttons": [{
-                                                "text": "Buscar Horario en G-Calendar",
-                                                "onClick": {
-                                                    "openLink": { "url": data['url'] }
-                                                }
-                                            }]
-                                        }
-                                    }]
-                                }]
-                            }
+                            "cardId": "calendar_card", "card": { "header": { "title": "Agendar Reunión de Seguimiento", "subtitle": f"Para: {', '.join(data['invitados'])}", "imageType": "CIRCLE", "imageUrl": "https://i.ibb.co/VvfTff5/calendar-icon.png" }, "sections": [{"widgets": [{"buttonList": {"buttons": [{"text": "Buscar Horario en G-Calendar", "onClick": {"openLink": { "url": data['url'] }}}]}}]}] }
                         }]
                     }
-                    return card
                 except (json.JSONDecodeError, KeyError) as e:
                     print(f"🔴 Error al procesar el enlace de calendario: {e}")
                     return "Hubo un error inesperado al generar el enlace de la reunión."

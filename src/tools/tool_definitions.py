@@ -66,20 +66,37 @@ convertir_a_tarea_declaration = FunctionDeclaration(
     }
 )
 
+# agendar_reunion_declaration = FunctionDeclaration(
+#     name="agendar_reunion_gcalendar",
+#     description="Genera un enlace de Google Calendar para agendar una reunión de seguimiento. Obtiene automáticamente al solicitante y responsable, y puede incluir invitados adicionales.",
+#     parameters={
+#         "type": "object",
+#         "properties": {
+#             "ticket_id": {"type": "string"},
+#             "email_invitados_adicionales": {
+#                 "type": "array",
+#                 "description": "Una lista opcional de correos electrónicos de otras personas a invitar.",
+#                 "items": {"type": "string"}
+#             }
+#         },
+#         "required": ["ticket_id"]
+#     }
+# )
 agendar_reunion_declaration = FunctionDeclaration(
     name="agendar_reunion_gcalendar",
-    description="Genera un enlace de Google Calendar para agendar una reunión de seguimiento. Obtiene automáticamente al solicitante y responsable, y puede incluir invitados adicionales.",
+    description="Útil para agendar una reunión en Google Calendar sobre un tema específico. Puede estar asociada a un tiquete o ser una reunión general. Invita automáticamente al solicitante y puede incluir invitados adicionales.",
     parameters={
         "type": "object",
         "properties": {
-            "ticket_id": {"type": "string"},
+            "titulo_reunion": {"type": "string", "description": "El título o tema principal de la reunión."},
+            "ticket_id": {"type": "string", "description": "El ID del tiquete si la reunión está relacionada con uno. Es opcional."},
             "email_invitados_adicionales": {
                 "type": "array",
                 "description": "Una lista opcional de correos electrónicos de otras personas a invitar.",
                 "items": {"type": "string"}
             }
         },
-        "required": ["ticket_id"]
+        "required": ["titulo_reunion"]
     }
 )
 

@@ -32,14 +32,23 @@ def get_or_create_active_session(user_id_full: str) -> str:
             print(f"▶️  La sesión para {user_id} ha expirado. Creando una nueva sesión.")
             new_session_id = str(uuid.uuid4())
             session_doc_ref.set({"active_session_id": new_session_id, "last_activity": now})
-            return new_session_id
+            return new_session_id, None
         else:
-            return session_data.get("active_session_id")
+            return session_data.get("active_session_id"), session_data.get("state")
     else:
         print(f"▶️  Creando primera sesión para el usuario {user_id}.")
         new_session_id = str(uuid.uuid4())
         session_doc_ref.set({"active_session_id": new_session_id, "last_activity": now})
-        return new_session_id
+        return new_session_id, None
+
+def set_session_state(user_id_full: str, state: str | None):
+    """Actualiza el estado de la sesión activa de un usuario."""
+    user_id = _get_clean_user_id(user_id_full)
+    if not user_id: return
+
+    session_doc_ref = db.collection(SESSION_COLLECTION).document(user_id)
+    session_doc_ref.set({"state": state, "last_activity": datetime.now(timezone.utc)}, merge=True)
+    print(f"▶️ Estado de la sesión para {user_id} actualizado a: {state}")
 
 def save_chat_history(session_id: str, user_id_full: str, history: list, num_existing: int):
     """
